@@ -2,8 +2,6 @@ using CricketTop10Game.Api.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add OpenAPI support
-builder.Services.AddOpenApi();
 
 builder.Services.AddCors(options =>
 {
@@ -20,12 +18,6 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseCors("FrontendPolicy");
-
-// Enable OpenAPI in development
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
 
 app.UseHttpsRedirection();
 
