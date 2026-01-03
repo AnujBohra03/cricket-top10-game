@@ -1,0 +1,12 @@
+# .NET build output
+bin/
+obj/
+
+# User / IDE files
+*.user
+*.suo
+*.cache
+*.pdb
+
+# ASP.NET
+appsettings.Development.json
