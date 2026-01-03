@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5150";
+const BASE_URL = "https://cricket-top10-api.onrender.com";
 
 export async function getQuestion() {
   const res = await fetch(`${BASE_URL}/question`);
