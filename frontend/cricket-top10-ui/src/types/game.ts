@@ -13,6 +13,7 @@ export interface GuessResult {
 export interface GameState {
   lives: number;
   found: number;
+  correctGuesses?: Answer[];
 }
 
 export interface Answer {

@@ -125,16 +125,35 @@ public class GameService
             return new
             {
                 lives = 3,
-                found = 0
+                found = 0,
+                correctGuesses = new List<object>()
             };
         }
 
         var guessed = GetGuessedPlayers(session);
         
+        // Get full details of guessed players (player name and rank)
+        var correctGuesses = new List<object>();
+        if (guessed.Count > 0)
+        {
+            var guessedAnswers = _db.Answers
+                .Where(a => a.QuestionId == session.QuestionId && 
+                           guessed.Contains(a.NormalizedPlayer))
+                .Select(a => new
+                {
+                    player = a.Player,
+                    rank = a.Rank
+                })
+                .ToList();
+            
+            correctGuesses = guessedAnswers.Cast<object>().ToList();
+        }
+        
         return new
         {
             lives = session.Lives,
-            found = guessed.Count
+            found = guessed.Count,
+            correctGuesses = correctGuesses
         };
     }
 

@@ -7,7 +7,7 @@ import {
   getAnswers,
 } from "../api/api";
 import GameCard from "../components/GameCard";
-import type { Question, Answer, GuessResult } from "../types/game";
+import type { Question, Answer, GuessResult, GameState } from "../types/game";
 
 function GamePage() {
   const [question, setQuestion] = useState<Question | null>(null);
@@ -30,10 +30,14 @@ function GamePage() {
         setError("");
         setInitialLoading(true);
         const q = await getQuestion();
-        const s = await getState();
+        const s: GameState = await getState();
         setQuestion(q);
         setLives(s.lives);
         setFound(s.found);
+        // Restore previously guessed players
+        if (s.correctGuesses && Array.isArray(s.correctGuesses)) {
+          setCorrectAnswers(s.correctGuesses);
+        }
       } catch (err) {
         setError(
           err instanceof Error

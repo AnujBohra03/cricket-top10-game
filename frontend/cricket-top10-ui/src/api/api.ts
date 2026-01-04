@@ -1,7 +1,7 @@
 import { getSessionId, updateSessionId } from "./session";
 
-//const BASE_URL = import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com";
-const BASE_URL = "http://localhost:5150";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com";
+//const BASE_URL = "http://localhost:5150";
 
 function getHeaders(): HeadersInit {
   const headers: HeadersInit = {
