@@ -9,4 +9,5 @@ public class AppDbContext : DbContext
 
     public DbSet<QuestionEntity> Questions => Set<QuestionEntity>();
     public DbSet<AnswerEntity> Answers => Set<AnswerEntity>();
+    public DbSet<GameSession> GameSessions => Set<GameSession>();
 }
