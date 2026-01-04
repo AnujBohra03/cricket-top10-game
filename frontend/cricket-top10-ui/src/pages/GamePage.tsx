@@ -38,6 +38,15 @@ function GamePage() {
         if (s.correctGuesses && Array.isArray(s.correctGuesses)) {
           setCorrectAnswers(s.correctGuesses);
         }
+        // If challenge is already completed, load all answers
+        if (s.found === 10 && q) {
+          try {
+            const answers: Answer[] = await getAnswers(q.id);
+            setAllAnswers(answers);
+          } catch (err) {
+            // Silently fail - not critical
+          }
+        }
       } catch (err) {
         setError(
           err instanceof Error
@@ -52,7 +61,7 @@ function GamePage() {
   }, []);
 
   async function handleGuess() {
-    if (!guess || lives === 0 || !question) return;
+    if (!guess || lives === 0 || !question || found === 10) return;
 
     // Validate input
     const trimmedGuess = guess.trim();
@@ -88,8 +97,23 @@ function GamePage() {
       setFound(s.found);
       setGuess("");
 
-      // 🔥 Reveal answers ONLY when game ends
-      if (s.lives === 0 && question) {
+      // Check if challenge is completed (all 10 found)
+      if (s.found === 10 && question) {
+        try {
+          // Reveal all answers when completed
+          const answers: Answer[] = await getAnswers(question.id);
+          setAllAnswers(answers);
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load answers. Please try again."
+          );
+        }
+      }
+
+      // 🔥 Reveal answers ONLY when game ends (lives = 0)
+      if (s.lives === 0 && question && s.found < 10) {
         try {
           const answers: Answer[] = await getAnswers(question.id);
           setAllAnswers(answers);
@@ -224,8 +248,33 @@ function GamePage() {
         <span>🏏 FOUND: {found} / 10</span>
       </div>
 
+      {/* Challenge Completed Banner */}
+      {found === 10 && (
+        <div
+          style={{
+            marginBottom: "12px",
+            padding: "15px",
+            borderRadius: "8px",
+            background: "linear-gradient(135deg, #052e16 0%, #14532d 100%)",
+            color: "#4ade80",
+            fontWeight: 700,
+            textAlign: "center",
+            border: "2px solid #22c55e",
+            boxShadow: "0 4px 12px rgba(34, 197, 94, 0.3)",
+          }}
+        >
+          <div style={{ fontSize: "24px", marginBottom: "8px" }}>🎉</div>
+          <div style={{ fontSize: "18px", marginBottom: "4px" }}>
+            Congratulations!
+          </div>
+          <div style={{ fontSize: "14px", opacity: 0.9 }}>
+            Challenge Completed! You found all 10 players! 🏆
+          </div>
+        </div>
+      )}
+
       {/* Game Over Banner */}
-      {lives === 0 && (
+      {lives === 0 && found < 10 && (
         <div
           style={{
             marginBottom: "12px",
@@ -251,9 +300,9 @@ function GamePage() {
             setGuess(value);
           }
         }}
-        onKeyDown={(e) => e.key === "Enter" && !loading && handleGuess()}
+        onKeyDown={(e) => e.key === "Enter" && !loading && found < 10 && handleGuess()}
         placeholder="Enter player name (max 50 characters)"
-        disabled={lives === 0 || loading}
+        disabled={lives === 0 || loading || found === 10}
         maxLength={50}
         style={{
           width: "100%",
@@ -270,21 +319,21 @@ function GamePage() {
       {/* Guess Button */}
       <button
         onClick={handleGuess}
-        disabled={lives === 0 || !guess || loading}
+        disabled={lives === 0 || !guess || loading || found === 10}
         style={{
           width: "100%",
           padding: "10px",
           borderRadius: "6px",
           border: "none",
-          background: "#22c55e",
-          color: "#052e16",
+          background: found === 10 ? "#6b7280" : "#22c55e",
+          color: found === 10 ? "#9ca3af" : "#052e16",
           fontWeight: 600,
           marginBottom: "12px",
-          opacity: lives === 0 || !guess || loading ? 0.5 : 1,
-          cursor: lives === 0 || !guess || loading ? "not-allowed" : "pointer",
+          opacity: lives === 0 || !guess || loading || found === 10 ? 0.5 : 1,
+          cursor: lives === 0 || !guess || loading || found === 10 ? "not-allowed" : "pointer",
         }}
       >
-        {loading ? "⏳ Processing..." : "Guess"}
+        {loading ? "⏳ Processing..." : found === 10 ? "✓ Challenge Completed" : "Guess"}
       </button>
 
       {/* Error Message */}
@@ -330,8 +379,8 @@ function GamePage() {
         </div>
       )}
 
-      {/* Correct Guesses (during game) */}
-      {correctAnswers.length > 0 && lives > 0 && (
+      {/* Correct Guesses (during game - hide when completed) */}
+      {correctAnswers.length > 0 && lives > 0 && found < 10 && (
         <div style={{ marginBottom: "12px" }}>
           <h4 style={{ fontSize: "14px", marginBottom: "6px" }}>
             ✅ Correct Guesses
@@ -348,15 +397,15 @@ function GamePage() {
         </div>
       )}
 
-      {/* Reveal All Answers on Game Over */}
-      {lives === 0 && allAnswers.length > 0 && (
+      {/* Reveal All Answers on Challenge Completion or Game Over */}
+      {(found === 10 || lives === 0) && allAnswers.length > 0 && (
         <div style={{ marginBottom: "14px" }}>
           <h4 style={{ fontSize: "14px", marginBottom: "6px" }}>
-            📋 Top 10 Answers
+            {found === 10 ? "🏆 All 10 Players Found!" : "📋 Top 10 Answers"}
           </h4>
           <ul style={{ paddingLeft: "16px", fontSize: "13px" }}>
             {allAnswers.map((item) => {
-              const found = correctAnswers.some(
+              const isGuessed = correctAnswers.some(
                 (a) => a.player === item.player
               );
               return (
@@ -364,10 +413,12 @@ function GamePage() {
                   key={item.rank}
                   style={{
                     marginBottom: "4px",
-                    color: found ? "#4ade80" : "#f87171",
+                    color: isGuessed ? "#4ade80" : found === 10 ? "#4ade80" : "#f87171",
+                    fontWeight: isGuessed ? 600 : 400,
                   }}
                 >
-                  #{item.rank} — {item.player} {!found && "❌"}
+                  #{item.rank} — {item.player} {!isGuessed && lives === 0 && "❌"}
+                  {isGuessed && found === 10 && " ✅"}
                 </li>
               );
             })}
