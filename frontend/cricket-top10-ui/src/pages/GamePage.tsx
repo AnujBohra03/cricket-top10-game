@@ -7,11 +7,10 @@ import {
   getAnswers,
 } from "../api/api";
 import GameCard from "../components/GameCard";
-
-type Answer = { player: string; rank: number };
+import type { Question, Answer, GuessResult } from "../types/game";
 
 function GamePage() {
-  const [question, setQuestion] = useState<any>(null);
+  const [question, setQuestion] = useState<Question | null>(null);
   const [lives, setLives] = useState(3);
   const [found, setFound] = useState(0);
   const [guess, setGuess] = useState("");
@@ -20,58 +19,135 @@ function GamePage() {
   const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
   const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
   const [showHelp, setShowHelp] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   // Initial load
   useEffect(() => {
     async function load() {
-      const q = await getQuestion();
-      const s = await getState();
-      setQuestion(q);
-      setLives(s.lives);
-      setFound(s.found);
+      try {
+        setError("");
+        setInitialLoading(true);
+        const q = await getQuestion();
+        const s = await getState();
+        setQuestion(q);
+        setLives(s.lives);
+        setFound(s.found);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load game. Please refresh the page."
+        );
+      } finally {
+        setInitialLoading(false);
+      }
     }
     load();
   }, []);
 
   async function handleGuess() {
-    if (!guess || lives === 0) return;
+    if (!guess || lives === 0 || !question) return;
 
-    const result = await makeGuess(guess);
-
-    if (result.correct) {
-      setMessage(`✅ ${result.player} is Rank #${result.rank}`);
-      setCorrectAnswers((prev) => [
-        ...prev,
-        { player: result.player, rank: result.rank },
-      ]);
-    } else if (result.message === "Already guessed") {
-      setMessage("⚠️ Already guessed");
-    } else {
-      setMessage("❌ Wrong guess");
+    // Validate input
+    const trimmedGuess = guess.trim();
+    if (!trimmedGuess) {
+      setMessage("⚠️ Please enter a player name");
+      return;
     }
 
-    const s = await getState();
-    setLives(s.lives);
-    setFound(s.found);
-    setGuess("");
+    if (trimmedGuess.length > 50) {
+      setMessage("⚠️ Player name must be 50 characters or less");
+      return;
+    }
 
-    // 🔥 Reveal answers ONLY when game ends
-    if (s.lives === 0) {
-      const answers = await getAnswers();
-      setAllAnswers(answers);
+    try {
+      setError("");
+      setLoading(true);
+      const result: GuessResult = await makeGuess(question.id, trimmedGuess);
+
+      if (result.correct) {
+        setMessage(`✅ ${result.player} is Rank #${result.rank}`);
+        setCorrectAnswers((prev) => [
+          ...prev,
+          { player: result.player!, rank: result.rank! },
+        ]);
+      } else if (result.message === "Already guessed") {
+        setMessage("⚠️ Already guessed");
+      } else {
+        setMessage("❌ Wrong guess");
+      }
+
+      const s = await getState();
+      setLives(s.lives);
+      setFound(s.found);
+      setGuess("");
+
+      // 🔥 Reveal answers ONLY when game ends
+      if (s.lives === 0 && question) {
+        try {
+          const answers: Answer[] = await getAnswers(question.id);
+          setAllAnswers(answers);
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load answers. Please try again."
+          );
+        }
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to submit guess. Please try again."
+      );
+      setMessage("");
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleReset() {
-    await resetGame();
-    const s = await getState();
+    try {
+      setError("");
+      setLoading(true);
+      await resetGame();
+      const s = await getState();
 
-    setLives(s.lives);
-    setFound(s.found);
-    setGuess("");
-    setMessage("");
-    setCorrectAnswers([]);
-    setAllAnswers([]);
+      setLives(s.lives);
+      setFound(s.found);
+      setGuess("");
+      setMessage("");
+      setCorrectAnswers([]);
+      setAllAnswers([]);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to reset game. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (initialLoading) {
+    return (
+      <GameCard>
+        <div
+          style={{
+            textAlign: "center",
+            padding: "40px 20px",
+            color: "#93c5fd",
+          }}
+        >
+          <div style={{ fontSize: "18px", marginBottom: "10px" }}>⏳</div>
+          <div>Loading game...</div>
+        </div>
+      </GameCard>
+    );
   }
 
   return (
@@ -164,10 +240,17 @@ function GamePage() {
       {/* Input */}
       <input
         value={guess}
-        onChange={(e) => setGuess(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && handleGuess()}
-        placeholder="Enter player name"
-        disabled={lives === 0}
+        onChange={(e) => {
+          const value = e.target.value;
+          // Limit to 50 characters
+          if (value.length <= 50) {
+            setGuess(value);
+          }
+        }}
+        onKeyDown={(e) => e.key === "Enter" && !loading && handleGuess()}
+        placeholder="Enter player name (max 50 characters)"
+        disabled={lives === 0 || loading}
+        maxLength={50}
         style={{
           width: "100%",
           padding: "10px",
@@ -176,13 +259,14 @@ function GamePage() {
           marginBottom: "10px",
           background: "#0f172a",
           color: "#fff",
+          opacity: loading ? 0.6 : 1,
         }}
       />
 
       {/* Guess Button */}
       <button
         onClick={handleGuess}
-        disabled={lives === 0 || !guess}
+        disabled={lives === 0 || !guess || loading}
         style={{
           width: "100%",
           padding: "10px",
@@ -192,11 +276,30 @@ function GamePage() {
           color: "#052e16",
           fontWeight: 600,
           marginBottom: "12px",
-          opacity: lives === 0 || !guess ? 0.5 : 1,
+          opacity: lives === 0 || !guess || loading ? 0.5 : 1,
+          cursor: lives === 0 || !guess || loading ? "not-allowed" : "pointer",
         }}
       >
-        Guess
+        {loading ? "⏳ Processing..." : "Guess"}
       </button>
+
+      {/* Error Message */}
+      {error && (
+        <div
+          style={{
+            marginBottom: "12px",
+            padding: "10px",
+            borderRadius: "6px",
+            fontSize: "14px",
+            background: "#450a0a",
+            color: "#f87171",
+            border: "1px solid #1e293b",
+            fontWeight: 500,
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Feedback */}
       {message && (
@@ -271,6 +374,7 @@ function GamePage() {
       {/* Reset */}
       <button
         onClick={handleReset}
+        disabled={loading}
         style={{
           width: "100%",
           padding: "8px",
@@ -279,9 +383,11 @@ function GamePage() {
           background: "transparent",
           color: "#e5e7eb",
           fontSize: "13px",
+          opacity: loading ? 0.5 : 1,
+          cursor: loading ? "not-allowed" : "pointer",
         }}
       >
-        Reset Game
+        {loading ? "⏳ Resetting..." : "Reset Game"}
       </button>
     </GameCard>
   );
