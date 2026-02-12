@@ -1,7 +1,20 @@
 import { getSessionId, updateSessionId } from "./session";
 import type { Answer, GameState, GuessResponse, Question } from "../types/game";
+import {
+  parseAnswers,
+  parseGameState,
+  parseGuessResponse,
+  parseQuestion,
+} from "../utils/apiGuards";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com";
+function normalizeApiBaseUrl(rawBaseUrl: string): string {
+  const trimmed = rawBaseUrl.trim().replace(/\/+$/, "");
+  return trimmed.replace(/\/api\/v1$/i, "");
+}
+
+const BASE_URL = normalizeApiBaseUrl(
+  import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com"
+);
 const API_PREFIX = "/api/v1";
 
 function getHeaders(): HeadersInit {
@@ -18,9 +31,10 @@ function handleSessionResponse(res: Response): void {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request(path: string, init?: RequestInit): Promise<unknown> {
+  const requestUrl = `${BASE_URL}${API_PREFIX}${path}`;
   try {
-    const res = await fetch(`${BASE_URL}${API_PREFIX}${path}`, {
+    const res = await fetch(requestUrl, {
       ...init,
       headers: {
         ...getHeaders(),
@@ -44,9 +58,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       } catch {
         message = `${message} ${errorText}`;
       }
+      if (res.status === 404 && path === "/questions/current") {
+        message =
+          "Question endpoint not found (404). Check that VITE_API_URL is the API host only (for example https://cricket-top10-api.onrender.com) and does not include /api/v1.";
+      }
       throw new Error(message.trim());
     }
-    return res.json() as Promise<T>;
+    return res.json() as Promise<unknown>;
   } catch (err) {
     if (err instanceof Error) {
       throw err;
@@ -56,19 +74,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getQuestion(): Promise<Question> {
-  return request<Question>("/questions/current");
+  const data = await request("/questions/current");
+  return parseQuestion(data);
 }
 
 export async function getState(): Promise<GameState> {
-  return request<GameState>("/state");
+  const data = await request("/state");
+  return parseGameState(data);
 }
 
 export async function getAnswers(questionId: string): Promise<Answer[]> {
-  return request<Answer[]>(`/answers?questionId=${encodeURIComponent(questionId)}`);
+  const data = await request(`/answers?questionId=${encodeURIComponent(questionId)}`);
+  return parseAnswers(data);
 }
 
 export async function makeGuess(questionId: string, guess: string): Promise<GuessResponse> {
-  return request<GuessResponse>("/guess", {
+  const data = await request("/guess", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -78,10 +99,20 @@ export async function makeGuess(questionId: string, guess: string): Promise<Gues
       guess,
     }),
   });
+  return parseGuessResponse(data);
 }
 
 export async function resetGame(): Promise<{ message: string }> {
-  return request<{ message: string }>("/reset", {
+  const data = await request("/reset", {
     method: "POST",
   });
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    "message" in data &&
+    typeof (data as { message: unknown }).message === "string"
+  ) {
+    return { message: (data as { message: string }).message };
+  }
+  throw new Error("Invalid API response: reset format mismatch");
 }
