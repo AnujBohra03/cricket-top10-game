@@ -1,201 +1,161 @@
 using CricketTop10Game.Api.Data;
+using CricketTop10Game.Api.Dtos;
 using CricketTop10Game.Api.Models;
-using System.Text.Json;
+using CricketTop10Game.Api.Options;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace CricketTop10Game.Api.Services;
 
 public class GameService
 {
     private readonly AppDbContext _db;
+    private readonly GameOptions _gameOptions;
 
-    // ⚠️ MVP state (single-session). We’ll make this per-user later.
-
-    public GameService(AppDbContext db)
+    public GameService(AppDbContext db, IOptions<GameOptions> gameOptions)
     {
         _db = db;
+        _gameOptions = gameOptions.Value;
     }
 
-    // -----------------------------
-    // Session Management
-    // -----------------------------
-    private GameSession GetOrCreateSession(Guid sessionId, Guid questionId)
+    public async Task<QuestionEntity> GetOrCreateCurrentQuestionAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
-        var session = _db.GameSessions.FirstOrDefault(s => s.SessionId == sessionId);
-        
-        if (session == null)
+        var session = await _db.GameSessions.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
+
+        if (session is not null)
         {
-            session = new GameSession
+            var existingQuestion = await _db.Questions.AsNoTracking()
+                .Where(q => q.Id == session.QuestionId)
+                .Select(q => new QuestionEntity { Id = q.Id, Text = q.Text })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (existingQuestion is not null)
             {
-                SessionId = sessionId,
-                QuestionId = questionId,
-                Lives = 3,
-                GuessedPlayersJson = "[]",
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            _db.GameSessions.Add(session);
-            _db.SaveChanges();
-        }
-        else
-        {
-            // Update question if different
-            if (session.QuestionId != questionId)
-            {
-                session.QuestionId = questionId;
-                session.Lives = 3;
-                session.GuessedPlayersJson = "[]";
-                session.UpdatedAt = DateTime.UtcNow;
-                _db.SaveChanges();
+                return existingQuestion;
             }
         }
-        
-        return session;
+
+        var question = await GetRandomQuestionAsync(cancellationToken);
+        await GetOrCreateSessionAsync(sessionId, question.Id, cancellationToken);
+        return question;
     }
 
-    private HashSet<string> GetGuessedPlayers(GameSession session)
+    public async Task<QuestionEntity> GetRandomQuestionAsync(CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(session.GuessedPlayersJson) || session.GuessedPlayersJson == "[]")
-            return new HashSet<string>();
-        
-        try
+        var questionIds = await _db.Questions
+            .AsNoTracking()
+            .Select(q => q.Id)
+            .ToListAsync(cancellationToken);
+
+        if (questionIds.Count == 0)
         {
-            var players = JsonSerializer.Deserialize<List<string>>(session.GuessedPlayersJson);
-            return players != null ? new HashSet<string>(players) : new HashSet<string>();
-        }
-        catch
-        {
-            return new HashSet<string>();
-        }
-    }
-
-    private void SaveGuessedPlayers(GameSession session, HashSet<string> guessed)
-    {
-        session.GuessedPlayersJson = JsonSerializer.Serialize(guessed.ToList());
-        session.UpdatedAt = DateTime.UtcNow;
-        _db.SaveChanges();
-    }
-
-    // -----------------------------
-    // Question
-    // -----------------------------
-    public QuestionEntity GetQuestion(Guid? sessionId = null)
-    {
-        var questions = _db.Questions.ToList();
-        
-        if (questions.Count == 0)
             throw new InvalidOperationException("No questions available in the database");
-
-        // If session exists, try to get a different question than the current one
-        Guid? currentQuestionId = null;
-        if (sessionId.HasValue)
-        {
-            var session = _db.GameSessions.FirstOrDefault(s => s.SessionId == sessionId.Value);
-            if (session != null)
-            {
-                currentQuestionId = session.QuestionId;
-            }
         }
 
-        // Filter out current question if we have multiple questions
-        var availableQuestions = currentQuestionId.HasValue && questions.Count > 1
-            ? questions.Where(q => q.Id != currentQuestionId.Value).ToList()
-            : questions;
+        var randomId = questionIds[Random.Shared.Next(questionIds.Count)];
+        var question = await _db.Questions.AsNoTracking()
+            .Where(q => q.Id == randomId)
+            .Select(q => new QuestionEntity { Id = q.Id, Text = q.Text })
+            .FirstAsync(cancellationToken);
 
-        // Return a random question from available questions
-        var random = new Random();
-        var q = availableQuestions[random.Next(availableQuestions.Count)];
-
-        return new QuestionEntity
-        {
-            Id = q.Id,
-            Text = q.Text
-        };
+        return question;
     }
 
-    // -----------------------------
-    // State
-    // -----------------------------
-    public object GetState(Guid sessionId)
+    public async Task<GameStateDto> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
-        var session = _db.GameSessions.FirstOrDefault(s => s.SessionId == sessionId);
-        
-        if (session == null)
+        var session = await _db.GameSessions.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
+
+        if (session is null)
         {
-            // Return default state for new session
-            return new
+            return new GameStateDto
             {
-                lives = 3,
-                found = 0,
-                correctGuesses = new List<object>()
+                Lives = _gameOptions.InitialLives,
+                Found = 0
             };
         }
 
-        var guessed = GetGuessedPlayers(session);
-        
-        // Get full details of guessed players (player name and rank)
-        var correctGuesses = new List<object>();
-        if (guessed.Count > 0)
+        var correctGuesses = await (
+            from guess in _db.SessionGuesses.AsNoTracking()
+            join answer in _db.Answers.AsNoTracking()
+                on new { guess.QuestionId, guess.NormalizedPlayer } equals new { answer.QuestionId, answer.NormalizedPlayer }
+            where guess.SessionId == session.SessionId && guess.QuestionId == session.QuestionId
+            orderby answer.Rank
+            select new AnswerDto
+            {
+                Player = answer.Player,
+                Rank = answer.Rank
+            }).ToListAsync(cancellationToken);
+
+        return new GameStateDto
         {
-            var guessedAnswers = _db.Answers
-                .Where(a => a.QuestionId == session.QuestionId && 
-                           guessed.Contains(a.NormalizedPlayer))
-                .Select(a => new
-                {
-                    player = a.Player,
-                    rank = a.Rank
-                })
-                .ToList();
-            
-            correctGuesses = guessedAnswers.Cast<object>().ToList();
-        }
-        
-        return new
-        {
-            lives = session.Lives,
-            found = guessed.Count,
-            correctGuesses = correctGuesses
+            Lives = session.Lives,
+            Found = correctGuesses.Count,
+            CorrectGuesses = correctGuesses
         };
     }
 
-    // -----------------------------
-    // Guess logic (DB-backed)
-    // -----------------------------
-    public GuessResult Guess(Guid sessionId, Guid questionId, string guess)
+    public async Task<GuessResponseDto> GuessAsync(Guid sessionId, Guid questionId, string guess, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(guess))
+        {
             throw new ArgumentException("Guess cannot be empty", nameof(guess));
+        }
 
-        if (guess.Length > 50)
-            throw new ArgumentException("Guess must be 50 characters or less", nameof(guess));
+        if (guess.Length > _gameOptions.MaxGuessLength)
+        {
+            throw new ArgumentException($"Guess must be {_gameOptions.MaxGuessLength} characters or less", nameof(guess));
+        }
 
-        // Get or create session
-        var session = GetOrCreateSession(sessionId, questionId);
+        await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
+        var session = await GetOrCreateSessionAsync(sessionId, questionId, cancellationToken);
 
         if (session.Lives <= 0)
-            return new GuessResult { Message = "Game over" };
+        {
+            var gameOverState = await GetStateAsync(sessionId, cancellationToken);
+            return new GuessResponseDto
+            {
+                Result = new GuessResult { Message = "Game over" },
+                State = gameOverState,
+                GameStatus = "lost"
+            };
+        }
 
         var normalizedGuess = Normalize(guess);
-        var guessed = GetGuessedPlayers(session);
 
-        if (guessed.Contains(normalizedGuess))
-            return new GuessResult { Message = "Already guessed" };
+        var alreadyGuessed = await _db.SessionGuesses.AnyAsync(
+            g => g.SessionId == sessionId && g.QuestionId == questionId && g.NormalizedPlayer == normalizedGuess,
+            cancellationToken);
 
-        // Verify question exists
-        var questionExists = _db.Questions.Any(q => q.Id == questionId);
-        if (!questionExists)
-            throw new ArgumentException("Invalid question ID", nameof(questionId));
-
-        var answer = _db.Answers.FirstOrDefault(a =>
-            a.QuestionId == questionId &&
-            a.NormalizedPlayer == normalizedGuess
-        );
-
-        if (answer != null)
+        if (alreadyGuessed)
         {
-            guessed.Add(normalizedGuess);
-            SaveGuessedPlayers(session, guessed);
+            var state = await GetStateAsync(sessionId, cancellationToken);
+            return new GuessResponseDto
+            {
+                Result = new GuessResult { Message = "Already guessed" },
+                State = state,
+                GameStatus = state.Found >= _gameOptions.MaxAnswersPerQuestion ? "won" : "active"
+            };
+        }
 
-            return new GuessResult
+        var answer = await _db.Answers.AsNoTracking().FirstOrDefaultAsync(
+            a => a.QuestionId == questionId && a.NormalizedPlayer == normalizedGuess,
+            cancellationToken);
+
+        GuessResult result;
+        if (answer is not null)
+        {
+            _db.SessionGuesses.Add(new SessionGuess
+            {
+                Id = Guid.NewGuid(),
+                SessionId = session.SessionId,
+                QuestionId = questionId,
+                NormalizedPlayer = normalizedGuess,
+                CreatedAt = DateTime.UtcNow
+            });
+
+            result = new GuessResult
             {
                 Correct = true,
                 Player = answer.Player,
@@ -203,63 +163,108 @@ public class GameService
                 Message = "Correct"
             };
         }
-
-        session.Lives--;
-        session.UpdatedAt = DateTime.UtcNow;
-        _db.SaveChanges();
-
-        return new GuessResult
+        else
         {
-            Correct = false,
-            Message = "Wrong guess"
+            session.Lives--;
+            session.UpdatedAt = DateTime.UtcNow;
+            result = new GuessResult
+            {
+                Correct = false,
+                Message = "Wrong guess"
+            };
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+
+        var updatedState = await GetStateAsync(sessionId, cancellationToken);
+        var status = updatedState.Found >= _gameOptions.MaxAnswersPerQuestion ? "won"
+            : updatedState.Lives <= 0 ? "lost"
+            : "active";
+
+        return new GuessResponseDto
+        {
+            Result = result,
+            State = updatedState,
+            GameStatus = status
         };
     }
 
-    // -----------------------------
-    // Reset game
-    // -----------------------------
-    public void Reset(Guid sessionId)
+    public async Task ResetAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
-        var session = _db.GameSessions.FirstOrDefault(s => s.SessionId == sessionId);
-        
-        if (session != null)
+        var session = await _db.GameSessions.FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
+        if (session is null)
         {
-            session.Lives = 3;
-            session.GuessedPlayersJson = "[]";
-            session.UpdatedAt = DateTime.UtcNow;
-            _db.SaveChanges();
+            return;
         }
+
+        session.Lives = _gameOptions.InitialLives;
+        session.GuessedPlayersJson = "[]";
+        session.UpdatedAt = DateTime.UtcNow;
+
+        var guesses = _db.SessionGuesses.Where(g => g.SessionId == sessionId);
+        _db.SessionGuesses.RemoveRange(guesses);
+
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    // -----------------------------
-    // Reveal answers (game over)
-    // -----------------------------
-    public IEnumerable<AnswerEntity> GetAllAnswers(Guid questionId)
+    public async Task<List<AnswerDto>> GetAllAnswersAsync(Guid questionId, CancellationToken cancellationToken = default)
     {
         if (questionId == Guid.Empty)
+        {
             throw new ArgumentException("Valid question ID is required", nameof(questionId));
+        }
 
-        // Verify question exists
-        var questionExists = _db.Questions.Any(q => q.Id == questionId);
+        var questionExists = await _db.Questions.AnyAsync(q => q.Id == questionId, cancellationToken);
         if (!questionExists)
+        {
             throw new ArgumentException("Invalid question ID", nameof(questionId));
+        }
 
-        return _db.Answers
+        return await _db.Answers.AsNoTracking()
             .Where(a => a.QuestionId == questionId)
             .OrderBy(a => a.Rank)
-            .Select(a => new AnswerEntity
+            .Select(a => new AnswerDto
             {
                 Player = a.Player,
                 Rank = a.Rank
             })
-            .ToList();
+            .ToListAsync(cancellationToken);
     }
 
-    // -----------------------------
-    // Helpers
-    // -----------------------------
-    private static string Normalize(string input)
+    private async Task<GameSession> GetOrCreateSessionAsync(Guid sessionId, Guid questionId, CancellationToken cancellationToken)
     {
-        return input.Trim().ToLowerInvariant();
+        var session = await _db.GameSessions.FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
+
+        if (session is null)
+        {
+            session = new GameSession
+            {
+                SessionId = sessionId,
+                QuestionId = questionId,
+                Lives = _gameOptions.InitialLives,
+                GuessedPlayersJson = "[]",
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.GameSessions.Add(session);
+            await _db.SaveChangesAsync(cancellationToken);
+            return session;
+        }
+
+        if (session.QuestionId != questionId)
+        {
+            session.QuestionId = questionId;
+            session.Lives = _gameOptions.InitialLives;
+            session.GuessedPlayersJson = "[]";
+            session.UpdatedAt = DateTime.UtcNow;
+            var guesses = _db.SessionGuesses.Where(g => g.SessionId == sessionId);
+            _db.SessionGuesses.RemoveRange(guesses);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        return session;
     }
+
+    private static string Normalize(string input) => input.Trim().ToLowerInvariant();
 }

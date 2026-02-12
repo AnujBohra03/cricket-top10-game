@@ -8,7 +8,9 @@ public class GameSession
     public Guid SessionId { get; set; }
     public Guid QuestionId { get; set; }
     public int Lives { get; set; }
-    public string GuessedPlayersJson { get; set; } = "[]"; // JSON array of normalized player names
+    public string GuessedPlayersJson { get; set; } = "[]";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+
+    public ICollection<SessionGuess> Guesses { get; set; } = new List<SessionGuess>();
 }

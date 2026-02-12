@@ -13,10 +13,16 @@ export interface GuessResult {
 export interface GameState {
   lives: number;
   found: number;
-  correctGuesses?: Answer[];
+  correctGuesses: Answer[];
 }
 
 export interface Answer {
   player: string;
   rank: number;
+}
+
+export interface GuessResponse {
+  result: GuessResult;
+  state: GameState;
+  gameStatus: "active" | "won" | "lost";
 }

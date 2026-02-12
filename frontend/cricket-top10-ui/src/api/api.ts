@@ -1,7 +1,8 @@
 import { getSessionId, updateSessionId } from "./session";
+import type { Answer, GameState, GuessResponse, Question } from "../types/game";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com";
-//const BASE_URL = "http://localhost:5150";
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5150";
+const API_PREFIX = "/api/v1";
 
 function getHeaders(): HeadersInit {
   const headers: HeadersInit = {
@@ -17,97 +18,70 @@ function handleSessionResponse(res: Response): void {
   }
 }
 
-export async function getQuestion() {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
-    const res = await fetch(`${BASE_URL}/question`, {
-      headers: getHeaders(),
-    });
-    handleSessionResponse(res);
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Failed to fetch question: ${res.status} ${errorText}`);
-    }
-    return res.json();
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error("Network error: Failed to connect to server");
-  }
-}
-
-export async function getState() {
-  try {
-    const res = await fetch(`${BASE_URL}/state`, {
-      headers: getHeaders(),
-    });
-    handleSessionResponse(res);
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Failed to fetch game state: ${res.status} ${errorText}`);
-    }
-    return res.json();
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error("Network error: Failed to connect to server");
-  }
-}
-
-export async function getAnswers(questionId: string) {
-  try {
-    const res = await fetch(`${BASE_URL}/answers?questionId=${questionId}`, {
-      headers: getHeaders(),
-    });
-    handleSessionResponse(res);
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Failed to fetch answers: ${res.status} ${errorText}`);
-    }
-    return res.json();
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error("Network error: Failed to connect to server");
-  }
-}
-
-export async function makeGuess(questionId: string, guess: string) {
-  try {
-    const res = await fetch(`${BASE_URL}/guess`, {
-      method: "POST",
+    const res = await fetch(`${BASE_URL}${API_PREFIX}${path}`, {
+      ...init,
       headers: {
         ...getHeaders(),
-        "Content-Type": "application/json",
+        ...(init?.headers || {}),
       },
-      body: JSON.stringify({
-        questionId,
-        guess,
-      }),
     });
+
     handleSessionResponse(res);
     if (!res.ok) {
       const errorText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Guess failed: ${res.status} ${errorText}`);
+      let message = `Request failed: ${res.status}`;
+      try {
+        const parsed = JSON.parse(errorText) as { detail?: string; title?: string };
+        if (parsed.detail) {
+          message = parsed.detail;
+        } else if (parsed.title) {
+          message = parsed.title;
+        } else if (errorText) {
+          message = `${message} ${errorText}`;
+        }
+      } catch {
+        message = `${message} ${errorText}`;
+      }
+      throw new Error(message.trim());
     }
-
-    return res.json();
+    return res.json() as Promise<T>;
   } catch (err) {
-    if (err instanceof Error) throw err;
+    if (err instanceof Error) {
+      throw err;
+    }
     throw new Error("Network error: Failed to connect to server");
   }
 }
 
-export async function resetGame() {
-  try {
-    const res = await fetch(`${BASE_URL}/reset`, {
-      method: "POST",
-      headers: getHeaders(),
-    });
-    handleSessionResponse(res);
-    if (!res.ok) {
-      const errorText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Failed to reset game: ${res.status} ${errorText}`);
-    }
-    return res.json();
-  } catch (err) {
-    if (err instanceof Error) throw err;
-    throw new Error("Network error: Failed to connect to server");
-  }
+export async function getQuestion(): Promise<Question> {
+  return request<Question>("/questions/current");
+}
+
+export async function getState(): Promise<GameState> {
+  return request<GameState>("/state");
+}
+
+export async function getAnswers(questionId: string): Promise<Answer[]> {
+  return request<Answer[]>(`/answers?questionId=${encodeURIComponent(questionId)}`);
+}
+
+export async function makeGuess(questionId: string, guess: string): Promise<GuessResponse> {
+  return request<GuessResponse>("/guess", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      questionId,
+      guess,
+    }),
+  });
+}
+
+export async function resetGame(): Promise<{ message: string }> {
+  return request<{ message: string }>("/reset", {
+    method: "POST",
+  });
 }
