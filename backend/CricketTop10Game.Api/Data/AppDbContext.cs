@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<AnswerEntity> Answers => Set<AnswerEntity>();
     public DbSet<GameSession> GameSessions => Set<GameSession>();
     public DbSet<SessionGuess> SessionGuesses => Set<SessionGuess>();
+    public DbSet<Player> Players => Set<Player>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,5 +34,9 @@ public class AppDbContext : DbContext
             .WithMany(s => s.Guesses)
             .HasForeignKey(g => g.SessionId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Player>()
+            .HasIndex(p => p.NormalizedName)
+            .IsUnique();
     }
 }

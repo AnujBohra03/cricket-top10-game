@@ -97,6 +97,17 @@ export async function getAnswers(questionId: string): Promise<Answer[]> {
   return parseAnswers(data);
 }
 
+export async function getPlayerSuggestions(query: string): Promise<string[]> {
+  if (query.trim().length < 2) {
+    return [];
+  }
+  const data = await request(`/players/suggest?q=${encodeURIComponent(query)}`);
+  if (Array.isArray(data) && data.every((item) => typeof item === "string")) {
+    return data;
+  }
+  throw new Error("Invalid API response: player suggestions format mismatch");
+}
+
 export async function makeGuess(questionId: string, guess: string): Promise<GuessResponse> {
   const data = await request("/guess", {
     method: "POST",

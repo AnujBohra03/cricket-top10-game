@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAnswers, getQuestion, getQuestions, getState, makeGuess, resetGame } from "../api/api";
+import { getAnswers, getPlayerSuggestions, getQuestion, getQuestions, getState, makeGuess, resetGame } from "../api/api";
 import type { Answer, Question } from "../types/game";
 
 type SessionStatus = "active" | "won" | "lost";
@@ -14,6 +14,7 @@ interface UseGameSessionResult {
   message: string;
   correctAnswers: Answer[];
   allAnswers: Answer[];
+  suggestions: string[];
   error: string;
   loading: boolean;
   initialLoading: boolean;
@@ -21,6 +22,7 @@ interface UseGameSessionResult {
   canGoPrevious: boolean;
   canGoNext: boolean;
   setGuess: (value: string) => void;
+  applySuggestion: (value: string) => void;
   submitGuess: () => Promise<void>;
   reset: () => Promise<void>;
   goToPreviousQuestion: () => Promise<void>;
@@ -37,11 +39,13 @@ export function useGameSession(): UseGameSessionResult {
   const [message, setMessage] = useState("");
   const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
   const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [status, setStatus] = useState<SessionStatus>("active");
   const isMountedRef = useRef(true);
+  const suppressNextSuggestionFetchRef = useRef(false);
 
   const refreshAllAnswers = useCallback(async (questionId: string) => {
     const answers = await getAnswers(questionId);
@@ -100,6 +104,33 @@ export function useGameSession(): UseGameSessionResult {
     };
   }, [refreshAllAnswers]);
 
+  useEffect(() => {
+    if (suppressNextSuggestionFetchRef.current) {
+      suppressNextSuggestionFetchRef.current = false;
+      return;
+    }
+
+    if (guess.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await getPlayerSuggestions(guess.trim());
+        if (isMountedRef.current) {
+          setSuggestions(result);
+        }
+      } catch {
+        if (isMountedRef.current) {
+          setSuggestions([]);
+        }
+      }
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [guess]);
+
   const loadQuestionByIndex = useCallback(
     async (nextIndex: number) => {
       if (nextIndex < 0 || nextIndex >= questions.length) {
@@ -119,6 +150,7 @@ export function useGameSession(): UseGameSessionResult {
         setCorrectAnswers(s.correctGuesses);
         setGuess("");
         setMessage("");
+        setSuggestions([]);
 
         const derivedStatus: SessionStatus = s.found >= 10 ? "won" : s.lives <= 0 ? "lost" : "active";
         setStatus(derivedStatus);
@@ -173,6 +205,7 @@ export function useGameSession(): UseGameSessionResult {
       setCorrectAnswers(response.state.correctGuesses);
       setStatus(response.gameStatus);
       setGuess("");
+      setSuggestions([]);
 
       if (response.gameStatus === "active") {
         setAllAnswers([]);
@@ -203,6 +236,7 @@ export function useGameSession(): UseGameSessionResult {
       setCorrectAnswers(s.correctGuesses);
       setAllAnswers([]);
       setStatus("active");
+      setSuggestions([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset game. Please try again.");
     } finally {
@@ -220,6 +254,12 @@ export function useGameSession(): UseGameSessionResult {
     await loadQuestionByIndex(currentQuestionIndex + 1);
   }, [currentQuestionIndex, loadQuestionByIndex]);
 
+  const applySuggestion = useCallback((value: string) => {
+    suppressNextSuggestionFetchRef.current = true;
+    setGuess(value);
+    setSuggestions([]);
+  }, []);
+
   return {
     questions,
     currentQuestionIndex,
@@ -230,6 +270,7 @@ export function useGameSession(): UseGameSessionResult {
     message,
     correctAnswers,
     allAnswers,
+    suggestions,
     error,
     loading,
     initialLoading,
@@ -237,6 +278,7 @@ export function useGameSession(): UseGameSessionResult {
     canGoPrevious: currentQuestionIndex > 0,
     canGoNext: currentQuestionIndex < questions.length - 1,
     setGuess,
+    applySuggestion,
     submitGuess,
     reset,
     goToPreviousQuestion,

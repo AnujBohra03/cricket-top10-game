@@ -43,6 +43,18 @@ public class GameController : ControllerBase
         return Ok(questions);
     }
 
+    [HttpGet("players/suggest")]
+    public async Task<IActionResult> SuggestPlayers([FromQuery] string q, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            return Ok(new List<string>());
+        }
+
+        var suggestions = await _game.SuggestPlayersAsync(q, cancellationToken);
+        return Ok(suggestions);
+    }
+
     [HttpGet("state")]
     public async Task<IActionResult> GetState(CancellationToken cancellationToken)
     {
