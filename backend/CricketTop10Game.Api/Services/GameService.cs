@@ -72,6 +72,68 @@ public class GameService
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<List<string>> SuggestPlayersAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = Normalize(query);
+        if (normalizedQuery.Length < 2)
+        {
+            return new List<string>();
+        }
+
+        return await _db.Players.AsNoTracking()
+            .Where(p => p.NormalizedName.Contains(normalizedQuery))
+            .OrderBy(p => p.NormalizedName.StartsWith(normalizedQuery) ? 0 : 1)
+            .ThenBy(p => p.Name)
+            .Take(8)
+            .Select(p => p.Name)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> UpsertPlayersAsync(IEnumerable<string> playerNames, CancellationToken cancellationToken = default)
+    {
+        var normalizedInput = playerNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => new
+            {
+                Name = name.Trim(),
+                NormalizedName = Normalize(name)
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.NormalizedName))
+            .GroupBy(x => x.NormalizedName)
+            .Select(g => g.First())
+            .ToList();
+
+        if (normalizedInput.Count == 0)
+        {
+            return 0;
+        }
+
+        var normalizedNames = normalizedInput.Select(x => x.NormalizedName).ToList();
+        var existing = await _db.Players.AsNoTracking()
+            .Where(p => normalizedNames.Contains(p.NormalizedName))
+            .Select(p => p.NormalizedName)
+            .ToListAsync(cancellationToken);
+
+        var existingSet = existing.ToHashSet();
+        var toAdd = normalizedInput
+            .Where(x => !existingSet.Contains(x.NormalizedName))
+            .Select(x => new Player
+            {
+                Name = x.Name,
+                NormalizedName = x.NormalizedName
+            })
+            .ToList();
+
+        if (toAdd.Count == 0)
+        {
+            return 0;
+        }
+
+        _db.Players.AddRange(toAdd);
+        await _db.SaveChangesAsync(cancellationToken);
+        return toAdd.Count;
+    }
+
     public async Task<QuestionEntity> GetRandomQuestionAsync(CancellationToken cancellationToken = default)
     {
         var questionIds = await _db.Questions

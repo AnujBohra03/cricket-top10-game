@@ -14,6 +14,7 @@ function GamePage() {
     message,
     correctAnswers,
     allAnswers,
+    suggestions,
     error,
     loading,
     initialLoading,
@@ -21,6 +22,7 @@ function GamePage() {
     canGoPrevious,
     canGoNext,
     setGuess,
+    applySuggestion,
     submitGuess,
     reset,
     goToPreviousQuestion,
@@ -237,6 +239,7 @@ function GamePage() {
       </label>
       <input
         id="guess-input"
+        name="cricket-guess-input"
         value={guess}
         onChange={(e) => {
           const value = e.target.value;
@@ -248,6 +251,10 @@ function GamePage() {
         placeholder="Enter player name (max 50 characters)"
         disabled={lives === 0 || loading || found === 10}
         maxLength={50}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
         style={{
           width: "100%",
           padding: "10px",
@@ -259,6 +266,43 @@ function GamePage() {
           opacity: loading ? 0.6 : 1,
         }}
       />
+
+      {suggestions.length > 0 && (
+        <ul
+          style={{
+            listStyle: "none",
+            marginBottom: "10px",
+            padding: "6px",
+            borderRadius: "6px",
+            border: "1px solid #334155",
+            background: "#0b1220",
+            maxHeight: "150px",
+            overflowY: "auto",
+          }}
+          aria-label="Player suggestions"
+        >
+          {suggestions.map((item) => (
+            <li key={item}>
+              <button
+                type="button"
+                onClick={() => applySuggestion(item)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px",
+                  border: "none",
+                  background: "transparent",
+                  color: "#cbd5e1",
+                  cursor: "pointer",
+                  borderRadius: "4px",
+                }}
+              >
+                {item}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <button
         onClick={() => void submitGuess()}

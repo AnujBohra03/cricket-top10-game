@@ -6,6 +6,7 @@ using CricketTop10Game.Api.Options;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using CricketTop10Game.Api.Services;
 
 namespace CricketTop10Game.Api.Controllers;
 
@@ -16,11 +17,13 @@ public class AdminController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly GameOptions _gameOptions;
+    private readonly GameService _gameService;
 
-    public AdminController(AppDbContext db, IOptions<GameOptions> gameOptions)
+    public AdminController(AppDbContext db, IOptions<GameOptions> gameOptions, GameService gameService)
     {
         _db = db;
         _gameOptions = gameOptions.Value;
+        _gameService = gameService;
     }
 
     [HttpPost("questions")]
@@ -77,8 +80,21 @@ public class AdminController : ControllerBase
 
         _db.Questions.Add(question);
         await _db.SaveChangesAsync(cancellationToken);
+        await _gameService.UpsertPlayersAsync(dto.Answers.Select(a => a.Player), cancellationToken);
 
         return Ok(new { questionId = question.Id });
+    }
+
+    [HttpPost("players")]
+    public async Task<IActionResult> AddPlayers([FromBody] CreatePlayersDto dto, CancellationToken cancellationToken)
+    {
+        if (dto == null || dto.Players == null || dto.Players.Count == 0)
+        {
+            return Problem(detail: "At least one player is required", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var added = await _gameService.UpsertPlayersAsync(dto.Players, cancellationToken);
+        return Ok(new { added });
     }
 
     [HttpGet("questions/{questionId:guid}")]
