@@ -1,7 +1,7 @@
 import { getSessionId, updateSessionId } from "./session";
 import type { Answer, GameState, GuessResponse, Question } from "../types/game";
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5150";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com";
 const API_PREFIX = "/api/v1";
 
 function getHeaders(): HeadersInit {
