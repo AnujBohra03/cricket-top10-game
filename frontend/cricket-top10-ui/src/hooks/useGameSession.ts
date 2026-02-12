@@ -3,6 +3,19 @@ import { getAnswers, getPlayerSuggestions, getQuestion, getQuestions, getState, 
 import type { Answer, Question } from "../types/game";
 
 type SessionStatus = "active" | "won" | "lost";
+type FeedbackTone = "success" | "error" | "warning" | "neutral";
+type AttemptOutcome = "correct" | "incorrect" | "duplicate";
+
+interface FeedbackState {
+  tone: FeedbackTone;
+  text: string;
+}
+
+interface GuessAttempt {
+  player: string;
+  outcome: AttemptOutcome;
+  rank?: number;
+}
 
 interface UseGameSessionResult {
   questions: Question[];
@@ -11,10 +24,12 @@ interface UseGameSessionResult {
   lives: number;
   found: number;
   guess: string;
-  message: string;
+  feedback: FeedbackState;
   correctAnswers: Answer[];
   allAnswers: Answer[];
+  attempts: GuessAttempt[];
   suggestions: string[];
+  selectedSuggestionIndex: number;
   error: string;
   loading: boolean;
   initialLoading: boolean;
@@ -23,6 +38,9 @@ interface UseGameSessionResult {
   canGoNext: boolean;
   setGuess: (value: string) => void;
   applySuggestion: (value: string) => void;
+  moveSuggestionSelection: (step: number) => void;
+  submitSelectedSuggestion: () => void;
+  dismissFeedback: () => void;
   submitGuess: () => Promise<void>;
   reset: () => Promise<void>;
   goToPreviousQuestion: () => Promise<void>;
@@ -36,16 +54,43 @@ export function useGameSession(): UseGameSessionResult {
   const [lives, setLives] = useState(3);
   const [found, setFound] = useState(0);
   const [guess, setGuess] = useState("");
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState<FeedbackState>({ tone: "neutral", text: "" });
   const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
   const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
+  const [attempts, setAttempts] = useState<GuessAttempt[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [status, setStatus] = useState<SessionStatus>("active");
   const isMountedRef = useRef(true);
   const suppressNextSuggestionFetchRef = useRef(false);
+  const suggestionsCacheRef = useRef<Map<string, string[]>>(new Map());
+
+  const pushAttempt = useCallback((attempt: GuessAttempt) => {
+    setAttempts((previous) => [attempt, ...previous].slice(0, 12));
+  }, []);
+
+  const formatSuggestionList = useCallback((query: string, raw: string[]): string[] => {
+    const normalizedQuery = query.trim().toLowerCase();
+    const unique = Array.from(new Set(raw));
+    return unique.sort((a, b) => {
+      const aLower = a.toLowerCase();
+      const bLower = b.toLowerCase();
+      const aStarts = aLower.startsWith(normalizedQuery) ? 0 : 1;
+      const bStarts = bLower.startsWith(normalizedQuery) ? 0 : 1;
+      if (aStarts !== bStarts) {
+        return aStarts - bStarts;
+      }
+      const aIndex = aLower.indexOf(normalizedQuery);
+      const bIndex = bLower.indexOf(normalizedQuery);
+      if (aIndex !== bIndex) {
+        return aIndex - bIndex;
+      }
+      return a.localeCompare(b);
+    });
+  }, []);
 
   const refreshAllAnswers = useCallback(async (questionId: string) => {
     const answers = await getAnswers(questionId);
@@ -112,24 +157,37 @@ export function useGameSession(): UseGameSessionResult {
 
     if (guess.trim().length < 2) {
       setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
+      return;
+    }
+
+    const normalizedQuery = guess.trim().toLowerCase();
+    const cached = suggestionsCacheRef.current.get(normalizedQuery);
+    if (cached) {
+      setSuggestions(cached);
+      setSelectedSuggestionIndex(cached.length > 0 ? 0 : -1);
       return;
     }
 
     const timer = setTimeout(async () => {
       try {
         const result = await getPlayerSuggestions(guess.trim());
+        const sorted = formatSuggestionList(guess, result);
+        suggestionsCacheRef.current.set(normalizedQuery, sorted);
         if (isMountedRef.current) {
-          setSuggestions(result);
+          setSuggestions(sorted);
+          setSelectedSuggestionIndex(sorted.length > 0 ? 0 : -1);
         }
       } catch {
         if (isMountedRef.current) {
           setSuggestions([]);
+          setSelectedSuggestionIndex(-1);
         }
       }
     }, 180);
 
     return () => clearTimeout(timer);
-  }, [guess]);
+  }, [formatSuggestionList, guess]);
 
   const loadQuestionByIndex = useCallback(
     async (nextIndex: number) => {
@@ -149,8 +207,11 @@ export function useGameSession(): UseGameSessionResult {
         setFound(s.found);
         setCorrectAnswers(s.correctGuesses);
         setGuess("");
-        setMessage("");
+        setFeedback({ tone: "neutral", text: "" });
+        setAttempts([]);
         setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+        suggestionsCacheRef.current.clear();
 
         const derivedStatus: SessionStatus = s.found >= 10 ? "won" : s.lives <= 0 ? "lost" : "active";
         setStatus(derivedStatus);
@@ -171,6 +232,11 @@ export function useGameSession(): UseGameSessionResult {
     [questions, refreshAllAnswers]
   );
 
+  const setGuessValue = useCallback((value: string) => {
+    setGuess(value);
+    setFeedback({ tone: "neutral", text: "" });
+  }, []);
+
   const submitGuess = useCallback(async () => {
     if (!guess || lives === 0 || !question || found === 10) {
       return;
@@ -178,11 +244,22 @@ export function useGameSession(): UseGameSessionResult {
 
     const trimmedGuess = guess.trim();
     if (!trimmedGuess) {
-      setMessage("⚠️ Please enter a player name");
+      setFeedback({ tone: "warning", text: "Enter a player name to submit a guess." });
       return;
     }
     if (trimmedGuess.length > 50) {
-      setMessage("⚠️ Player name must be 50 characters or less");
+      setFeedback({ tone: "warning", text: "Player name must be 50 characters or less." });
+      return;
+    }
+
+    const normalizedGuess = trimmedGuess.toLowerCase();
+    const existing = correctAnswers.some((item) => item.player.toLowerCase() === normalizedGuess);
+    if (existing) {
+      setFeedback({ tone: "warning", text: `${trimmedGuess} is already in your correct guesses.` });
+      pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
+      setGuess("");
+      setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
       return;
     }
 
@@ -193,11 +270,21 @@ export function useGameSession(): UseGameSessionResult {
       const result = response.result;
 
       if (result.correct) {
-        setMessage(`✅ ${result.player} is Rank #${result.rank}`);
+        const resolvedPlayer = result.player ?? trimmedGuess;
+        const resolvedRank = result.rank ?? response.state.correctGuesses.find((item) => item.player === resolvedPlayer)?.rank;
+        setFeedback({
+          tone: "success",
+          text: resolvedRank
+            ? `${resolvedPlayer} is correct at Rank #${resolvedRank}.`
+            : `${resolvedPlayer} is a correct answer.`,
+        });
+        pushAttempt({ player: resolvedPlayer, outcome: "correct", rank: resolvedRank });
       } else if (result.message === "Already guessed") {
-        setMessage("⚠️ Already guessed");
+        setFeedback({ tone: "warning", text: `${trimmedGuess} was already guessed.` });
+        pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       } else {
-        setMessage("❌ Wrong guess");
+        setFeedback({ tone: "error", text: `${trimmedGuess} is not in the Top 10 for this question.` });
+        pushAttempt({ player: trimmedGuess, outcome: "incorrect" });
       }
 
       setLives(response.state.lives);
@@ -206,6 +293,7 @@ export function useGameSession(): UseGameSessionResult {
       setStatus(response.gameStatus);
       setGuess("");
       setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
 
       if (response.gameStatus === "active") {
         setAllAnswers([]);
@@ -214,13 +302,13 @@ export function useGameSession(): UseGameSessionResult {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit guess. Please try again.");
-      setMessage("");
+      setFeedback({ tone: "neutral", text: "" });
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, [found, guess, lives, question, refreshAllAnswers]);
+  }, [correctAnswers, found, guess, lives, pushAttempt, question, refreshAllAnswers]);
 
   const reset = useCallback(async () => {
     try {
@@ -232,11 +320,14 @@ export function useGameSession(): UseGameSessionResult {
       setLives(s.lives);
       setFound(s.found);
       setGuess("");
-      setMessage("");
+      setFeedback({ tone: "neutral", text: "" });
       setCorrectAnswers(s.correctGuesses);
       setAllAnswers([]);
+      setAttempts([]);
       setStatus("active");
       setSuggestions([]);
+      setSelectedSuggestionIndex(-1);
+      suggestionsCacheRef.current.clear();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reset game. Please try again.");
     } finally {
@@ -258,6 +349,32 @@ export function useGameSession(): UseGameSessionResult {
     suppressNextSuggestionFetchRef.current = true;
     setGuess(value);
     setSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+  }, []);
+
+  const moveSuggestionSelection = useCallback(
+    (step: number) => {
+      if (suggestions.length === 0) {
+        setSelectedSuggestionIndex(-1);
+        return;
+      }
+      setSelectedSuggestionIndex((previous) => {
+        const base = previous < 0 ? (step > 0 ? 0 : suggestions.length - 1) : previous;
+        return (base + step + suggestions.length) % suggestions.length;
+      });
+    },
+    [suggestions.length]
+  );
+
+  const submitSelectedSuggestion = useCallback(() => {
+    if (selectedSuggestionIndex < 0 || selectedSuggestionIndex >= suggestions.length) {
+      return;
+    }
+    applySuggestion(suggestions[selectedSuggestionIndex]);
+  }, [applySuggestion, selectedSuggestionIndex, suggestions]);
+
+  const dismissFeedback = useCallback(() => {
+    setFeedback({ tone: "neutral", text: "" });
   }, []);
 
   return {
@@ -267,18 +384,23 @@ export function useGameSession(): UseGameSessionResult {
     lives,
     found,
     guess,
-    message,
+    feedback,
     correctAnswers,
     allAnswers,
+    attempts,
     suggestions,
+    selectedSuggestionIndex,
     error,
     loading,
     initialLoading,
     status,
     canGoPrevious: currentQuestionIndex > 0,
     canGoNext: currentQuestionIndex < questions.length - 1,
-    setGuess,
+    setGuess: setGuessValue,
     applySuggestion,
+    moveSuggestionSelection,
+    submitSelectedSuggestion,
+    dismissFeedback,
     submitGuess,
     reset,
     goToPreviousQuestion,

@@ -60,8 +60,14 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
         message = `${message} ${errorText}`;
       }
       if (res.status === 404 && path === "/questions/current") {
-        message =
-          "Question endpoint not found (404). Check that VITE_API_URL is the API host only (for example https://cricket-top10-api.onrender.com) and does not include /api/v1.";
+        const errorTextLower = errorText.toLowerCase();
+        if (errorTextLower.includes("no questions available")) {
+          message =
+            "No questions are configured in the production database yet. Add at least one question from the admin API.";
+        } else if (!errorTextLower.includes("no questions") && !errorTextLower.includes("request failed")) {
+          message =
+            "Question endpoint returned 404. Check that VITE_API_URL is the API host only (for example https://cricket-top10-api.onrender.com) and does not include /api/v1.";
+        }
       }
       throw new Error(message.trim());
     }
