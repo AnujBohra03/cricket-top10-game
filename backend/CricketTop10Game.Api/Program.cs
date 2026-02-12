@@ -18,6 +18,7 @@ builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddScoped<GameService>();
 builder.Services.AddScoped<AdminAuthService>();
+builder.Services.AddScoped<DatabaseSeeder>();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddRateLimiter(options =>
@@ -86,8 +87,16 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseStartup");
+    var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
     var runMigrations = builder.Configuration.GetValue("Database:RunMigrationsOnStartup", true);
     var allowDevFallbackEnsureCreated = builder.Configuration.GetValue("Database:AllowDevEnsureCreatedFallback", true);
+    var seedDefaultQuestionOnStartup = builder.Configuration.GetValue("Database:SeedDefaultQuestionOnStartup", true);
+    var isUsingSqlite = !connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+
+    if (app.Environment.IsProduction() && isUsingSqlite)
+    {
+        logger.LogWarning("Production is using SQLite ({ConnectionString}). Use a persistent PostgreSQL connection string in Render to avoid losing data across deploys.", connectionString);
+    }
 
     if (runMigrations)
     {
@@ -107,6 +116,11 @@ using (var scope = app.Services.CreateScope())
     else
     {
         logger.LogWarning("Database migrations are disabled by configuration.");
+    }
+
+    if (seedDefaultQuestionOnStartup)
+    {
+        seeder.SeedDefaultQuestionIfEmpty();
     }
 }
 
