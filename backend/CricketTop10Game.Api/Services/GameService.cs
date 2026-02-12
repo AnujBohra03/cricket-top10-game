@@ -18,8 +18,27 @@ public class GameService
         _gameOptions = gameOptions.Value;
     }
 
-    public async Task<QuestionEntity> GetOrCreateCurrentQuestionAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    public async Task<QuestionEntity> GetOrCreateCurrentQuestionAsync(
+        Guid sessionId,
+        Guid? preferredQuestionId = null,
+        CancellationToken cancellationToken = default)
     {
+        if (preferredQuestionId.HasValue && preferredQuestionId.Value != Guid.Empty)
+        {
+            var selectedQuestion = await _db.Questions.AsNoTracking()
+                .Where(q => q.Id == preferredQuestionId.Value)
+                .Select(q => new QuestionEntity { Id = q.Id, Text = q.Text })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (selectedQuestion is null)
+            {
+                throw new ArgumentException("Invalid question ID", nameof(preferredQuestionId));
+            }
+
+            await GetOrCreateSessionAsync(sessionId, selectedQuestion.Id, cancellationToken);
+            return selectedQuestion;
+        }
+
         var session = await _db.GameSessions.AsNoTracking()
             .FirstOrDefaultAsync(s => s.SessionId == sessionId, cancellationToken);
 
@@ -39,6 +58,18 @@ public class GameService
         var question = await GetRandomQuestionAsync(cancellationToken);
         await GetOrCreateSessionAsync(sessionId, question.Id, cancellationToken);
         return question;
+    }
+
+    public async Task<List<QuestionEntity>> GetQuestionsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _db.Questions.AsNoTracking()
+            .OrderBy(q => q.Text)
+            .Select(q => new QuestionEntity
+            {
+                Id = q.Id,
+                Text = q.Text
+            })
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<QuestionEntity> GetRandomQuestionAsync(CancellationToken cancellationToken = default)

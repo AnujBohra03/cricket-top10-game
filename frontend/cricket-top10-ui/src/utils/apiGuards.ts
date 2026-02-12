@@ -23,6 +23,13 @@ export function parseQuestion(value: unknown): Question {
   throw new Error("Invalid API response: question format mismatch");
 }
 
+export function parseQuestions(value: unknown): Question[] {
+  if (Array.isArray(value)) {
+    return value.map(parseQuestion);
+  }
+  throw new Error("Invalid API response: questions list format mismatch");
+}
+
 export function parseAnswers(value: unknown): Answer[] {
   if (Array.isArray(value) && value.every(isAnswer)) {
     return value;

@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import GameCard from "../components/GameCard";
 import { useGameSession } from "../hooks/useGameSession";
 
 function GamePage() {
   const [showHelp, setShowHelp] = useState(false);
   const {
+    questions,
+    currentQuestionIndex,
     question,
     lives,
     found,
@@ -16,10 +18,44 @@ function GamePage() {
     loading,
     initialLoading,
     status,
+    canGoPrevious,
+    canGoNext,
     setGuess,
     submitGuess,
     reset,
+    goToPreviousQuestion,
+    goToNextQuestion,
   } = useGameSession();
+
+  useEffect(() => {
+    function handleKeydown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      const isTypingContext =
+        tagName === "input" ||
+        tagName === "textarea" ||
+        target?.isContentEditable === true;
+
+      if (isTypingContext) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft" && canGoPrevious && !loading) {
+        event.preventDefault();
+        void goToPreviousQuestion();
+      }
+
+      if (event.key === "ArrowRight" && canGoNext && !loading) {
+        event.preventDefault();
+        void goToNextQuestion();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, [canGoNext, canGoPrevious, goToNextQuestion, goToPreviousQuestion, loading]);
 
   if (initialLoading) {
     return (
@@ -80,6 +116,56 @@ function GamePage() {
           </div>
         )}
       </section>
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "8px",
+          marginBottom: "8px",
+        }}
+      >
+        <button
+          onClick={() => void goToPreviousQuestion()}
+          disabled={!canGoPrevious || loading}
+          aria-label="Previous question"
+          style={{
+            borderRadius: "6px",
+            border: "1px solid #334155",
+            background: "transparent",
+            color: "#e2e8f0",
+            width: "32px",
+            height: "32px",
+            opacity: !canGoPrevious || loading ? 0.4 : 1,
+            cursor: !canGoPrevious || loading ? "not-allowed" : "pointer",
+          }}
+        >
+          ←
+        </button>
+
+        <div style={{ fontSize: "12px", color: "#93c5fd", textAlign: "center" }}>
+          Question {questions.length === 0 ? 0 : currentQuestionIndex + 1} / {questions.length}
+        </div>
+
+        <button
+          onClick={() => void goToNextQuestion()}
+          disabled={!canGoNext || loading}
+          aria-label="Next question"
+          style={{
+            borderRadius: "6px",
+            border: "1px solid #334155",
+            background: "transparent",
+            color: "#e2e8f0",
+            width: "32px",
+            height: "32px",
+            opacity: !canGoNext || loading ? 0.4 : 1,
+            cursor: !canGoNext || loading ? "not-allowed" : "pointer",
+          }}
+        >
+          →
+        </button>
+      </div>
 
       <h2
         style={{

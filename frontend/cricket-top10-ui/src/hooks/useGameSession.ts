@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getAnswers, getQuestion, getState, makeGuess, resetGame } from "../api/api";
+import { getAnswers, getQuestion, getQuestions, getState, makeGuess, resetGame } from "../api/api";
 import type { Answer, Question } from "../types/game";
 
 type SessionStatus = "active" | "won" | "lost";
 
 interface UseGameSessionResult {
+  questions: Question[];
+  currentQuestionIndex: number;
   question: Question | null;
   lives: number;
   found: number;
@@ -16,12 +18,18 @@ interface UseGameSessionResult {
   loading: boolean;
   initialLoading: boolean;
   status: SessionStatus;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
   setGuess: (value: string) => void;
   submitGuess: () => Promise<void>;
   reset: () => Promise<void>;
+  goToPreviousQuestion: () => Promise<void>;
+  goToNextQuestion: () => Promise<void>;
 }
 
 export function useGameSession(): UseGameSessionResult {
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [question, setQuestion] = useState<Question | null>(null);
   const [lives, setLives] = useState(3);
   const [found, setFound] = useState(0);
@@ -50,13 +58,17 @@ export function useGameSession(): UseGameSessionResult {
       try {
         setError("");
         setInitialLoading(true);
+        const questionList = await getQuestions();
         const q = await getQuestion();
         const s = await getState();
         if (cancelled || !isMountedRef.current) {
           return;
         }
 
+        setQuestions(questionList);
         setQuestion(q);
+        const resolvedIndex = questionList.findIndex((item) => item.id === q.id);
+        setCurrentQuestionIndex(resolvedIndex >= 0 ? resolvedIndex : 0);
         setLives(s.lives);
         setFound(s.found);
         setCorrectAnswers(s.correctGuesses);
@@ -87,6 +99,45 @@ export function useGameSession(): UseGameSessionResult {
       isMountedRef.current = false;
     };
   }, [refreshAllAnswers]);
+
+  const loadQuestionByIndex = useCallback(
+    async (nextIndex: number) => {
+      if (nextIndex < 0 || nextIndex >= questions.length) {
+        return;
+      }
+
+      const nextQuestion = questions[nextIndex];
+      try {
+        setError("");
+        setLoading(true);
+        const q = await getQuestion(nextQuestion.id);
+        const s = await getState();
+        setQuestion(q);
+        setCurrentQuestionIndex(nextIndex);
+        setLives(s.lives);
+        setFound(s.found);
+        setCorrectAnswers(s.correctGuesses);
+        setGuess("");
+        setMessage("");
+
+        const derivedStatus: SessionStatus = s.found >= 10 ? "won" : s.lives <= 0 ? "lost" : "active";
+        setStatus(derivedStatus);
+
+        if (derivedStatus === "active") {
+          setAllAnswers([]);
+        } else {
+          await refreshAllAnswers(q.id);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to switch question.");
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      }
+    },
+    [questions, refreshAllAnswers]
+  );
 
   const submitGuess = useCallback(async () => {
     if (!guess || lives === 0 || !question || found === 10) {
@@ -161,7 +212,17 @@ export function useGameSession(): UseGameSessionResult {
     }
   }, []);
 
+  const goToPreviousQuestion = useCallback(async () => {
+    await loadQuestionByIndex(currentQuestionIndex - 1);
+  }, [currentQuestionIndex, loadQuestionByIndex]);
+
+  const goToNextQuestion = useCallback(async () => {
+    await loadQuestionByIndex(currentQuestionIndex + 1);
+  }, [currentQuestionIndex, loadQuestionByIndex]);
+
   return {
+    questions,
+    currentQuestionIndex,
     question,
     lives,
     found,
@@ -173,8 +234,12 @@ export function useGameSession(): UseGameSessionResult {
     loading,
     initialLoading,
     status,
+    canGoPrevious: currentQuestionIndex > 0,
+    canGoNext: currentQuestionIndex < questions.length - 1,
     setGuess,
     submitGuess,
     reset,
+    goToPreviousQuestion,
+    goToNextQuestion,
   };
 }

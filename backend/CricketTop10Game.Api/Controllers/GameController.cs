@@ -28,12 +28,19 @@ public class GameController : ControllerBase
     }
 
     [HttpGet("questions/current")]
-    public async Task<IActionResult> GetCurrentQuestion(CancellationToken cancellationToken)
+    public async Task<IActionResult> GetCurrentQuestion([FromQuery] Guid? questionId, CancellationToken cancellationToken)
     {
         var sessionId = GetOrCreateSessionId();
-        var question = await _game.GetOrCreateCurrentQuestionAsync(sessionId, cancellationToken);
+        var question = await _game.GetOrCreateCurrentQuestionAsync(sessionId, questionId, cancellationToken);
         Response.Headers["X-Session-Id"] = sessionId.ToString();
         return Ok(question);
+    }
+
+    [HttpGet("questions")]
+    public async Task<IActionResult> GetQuestions(CancellationToken cancellationToken)
+    {
+        var questions = await _game.GetQuestionsAsync(cancellationToken);
+        return Ok(questions);
     }
 
     [HttpGet("state")]
