@@ -1,160 +1,25 @@
-import { useEffect, useState } from "react";
-import {
-  getQuestion,
-  getState,
-  makeGuess,
-  resetGame,
-  getAnswers,
-} from "../api/api";
+import { useState } from "react";
 import GameCard from "../components/GameCard";
-import type { Question, Answer, GuessResponse, GameState } from "../types/game";
+import { useGameSession } from "../hooks/useGameSession";
 
 function GamePage() {
-  const [question, setQuestion] = useState<Question | null>(null);
-  const [lives, setLives] = useState(3);
-  const [found, setFound] = useState(0);
-  const [guess, setGuess] = useState("");
-  const [message, setMessage] = useState("");
-
-  const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
-  const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
   const [showHelp, setShowHelp] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [initialLoading, setInitialLoading] = useState(true);
-
-  // Initial load
-  useEffect(() => {
-    async function load() {
-      try {
-        setError("");
-        setInitialLoading(true);
-        const q = await getQuestion();
-        const s: GameState = await getState();
-        setQuestion(q);
-        setLives(s.lives);
-        setFound(s.found);
-        setCorrectAnswers(s.correctGuesses);
-        // If challenge is already completed, load all answers
-        if (s.found === 10 && q) {
-          try {
-            const answers: Answer[] = await getAnswers(q.id);
-            setAllAnswers(answers);
-          } catch (err) {
-            // Silently fail - not critical
-          }
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load game. Please refresh the page."
-        );
-      } finally {
-        setInitialLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  async function handleGuess() {
-    if (!guess || lives === 0 || !question || found === 10) return;
-
-    // Validate input
-    const trimmedGuess = guess.trim();
-    if (!trimmedGuess) {
-      setMessage("⚠️ Please enter a player name");
-      return;
-    }
-
-    if (trimmedGuess.length > 50) {
-      setMessage("⚠️ Player name must be 50 characters or less");
-      return;
-    }
-
-    try {
-      setError("");
-      setLoading(true);
-      const response: GuessResponse = await makeGuess(question.id, trimmedGuess);
-      const result = response.result;
-
-      if (result.correct) {
-        setMessage(`✅ ${result.player} is Rank #${result.rank}`);
-      } else if (result.message === "Already guessed") {
-        setMessage("⚠️ Already guessed");
-      } else {
-        setMessage("❌ Wrong guess");
-      }
-
-      const s = response.state;
-      setLives(s.lives);
-      setFound(s.found);
-      setCorrectAnswers(s.correctGuesses);
-      setGuess("");
-
-      // Check if challenge is completed (all 10 found)
-      if (response.gameStatus === "won" && question) {
-        try {
-          // Reveal all answers when completed
-          const answers: Answer[] = await getAnswers(question.id);
-          setAllAnswers(answers);
-        } catch (err) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load answers. Please try again."
-          );
-        }
-      }
-
-      // 🔥 Reveal answers ONLY when game ends (lives = 0)
-      if (response.gameStatus === "lost" && question) {
-        try {
-          const answers: Answer[] = await getAnswers(question.id);
-          setAllAnswers(answers);
-        } catch (err) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load answers. Please try again."
-          );
-        }
-      }
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to submit guess. Please try again."
-      );
-      setMessage("");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleReset() {
-    try {
-      setError("");
-      setLoading(true);
-      await resetGame();
-      const s: GameState = await getState();
-
-      setLives(s.lives);
-      setFound(s.found);
-      setGuess("");
-      setMessage("");
-      setCorrectAnswers([]);
-      setAllAnswers([]);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to reset game. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+  const {
+    question,
+    lives,
+    found,
+    guess,
+    message,
+    correctAnswers,
+    allAnswers,
+    error,
+    loading,
+    initialLoading,
+    status,
+    setGuess,
+    submitGuess,
+    reset,
+  } = useGameSession();
 
   if (initialLoading) {
     return (
@@ -175,8 +40,7 @@ function GamePage() {
 
   return (
     <GameCard>
-      {/* How to Play */}
-      <div style={{ marginBottom: "14px" }}>
+      <section style={{ marginBottom: "14px" }} aria-label="How to play">
         <button
           onClick={() => setShowHelp(!showHelp)}
           style={{
@@ -187,12 +51,15 @@ function GamePage() {
             cursor: "pointer",
             padding: 0,
           }}
+          aria-expanded={showHelp}
+          aria-controls="how-to-play-panel"
         >
           ℹ️ How to Play
         </button>
 
         {showHelp && (
           <div
+            id="how-to-play-panel"
             style={{
               marginTop: "8px",
               fontSize: "13px",
@@ -212,9 +79,8 @@ function GamePage() {
             </ul>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Question */}
       <h2
         style={{
           fontSize: "18px",
@@ -226,7 +92,6 @@ function GamePage() {
         {question?.text}
       </h2>
 
-      {/* Scoreboard */}
       <div
         style={{
           display: "flex",
@@ -243,8 +108,7 @@ function GamePage() {
         <span>🏏 FOUND: {found} / 10</span>
       </div>
 
-      {/* Challenge Completed Banner */}
-      {found === 10 && (
+      {status === "won" && (
         <div
           style={{
             marginBottom: "12px",
@@ -259,17 +123,14 @@ function GamePage() {
           }}
         >
           <div style={{ fontSize: "24px", marginBottom: "8px" }}>🎉</div>
-          <div style={{ fontSize: "18px", marginBottom: "4px" }}>
-            Congratulations!
-          </div>
+          <div style={{ fontSize: "18px", marginBottom: "4px" }}>Congratulations!</div>
           <div style={{ fontSize: "14px", opacity: 0.9 }}>
             Challenge Completed! You found all 10 players! 🏆
           </div>
         </div>
       )}
 
-      {/* Game Over Banner */}
-      {lives === 0 && found < 10 && (
+      {status === "lost" && (
         <div
           style={{
             marginBottom: "12px",
@@ -285,17 +146,19 @@ function GamePage() {
         </div>
       )}
 
-      {/* Input */}
+      <label htmlFor="guess-input" style={{ display: "block", marginBottom: "8px", fontSize: "13px" }}>
+        Enter player name
+      </label>
       <input
+        id="guess-input"
         value={guess}
         onChange={(e) => {
           const value = e.target.value;
-          // Limit to 50 characters
           if (value.length <= 50) {
             setGuess(value);
           }
         }}
-        onKeyDown={(e) => e.key === "Enter" && !loading && found < 10 && handleGuess()}
+        onKeyDown={(e) => e.key === "Enter" && !loading && found < 10 && void submitGuess()}
         placeholder="Enter player name (max 50 characters)"
         disabled={lives === 0 || loading || found === 10}
         maxLength={50}
@@ -311,9 +174,8 @@ function GamePage() {
         }}
       />
 
-      {/* Guess Button */}
       <button
-        onClick={handleGuess}
+        onClick={() => void submitGuess()}
         disabled={lives === 0 || !guess || loading || found === 10}
         style={{
           width: "100%",
@@ -331,9 +193,9 @@ function GamePage() {
         {loading ? "⏳ Processing..." : found === 10 ? "✓ Challenge Completed" : "Guess"}
       </button>
 
-      {/* Error Message */}
       {error && (
         <div
+          aria-live="polite"
           style={{
             marginBottom: "12px",
             padding: "10px",
@@ -349,9 +211,9 @@ function GamePage() {
         </div>
       )}
 
-      {/* Feedback */}
       {message && (
         <div
+          aria-live="polite"
           style={{
             marginBottom: "12px",
             padding: "8px",
@@ -374,12 +236,9 @@ function GamePage() {
         </div>
       )}
 
-      {/* Correct Guesses (during game - hide when completed) */}
-      {correctAnswers.length > 0 && lives > 0 && found < 10 && (
+      {correctAnswers.length > 0 && status === "active" && (
         <div style={{ marginBottom: "12px" }}>
-          <h4 style={{ fontSize: "14px", marginBottom: "6px" }}>
-            ✅ Correct Guesses
-          </h4>
+          <h4 style={{ fontSize: "14px", marginBottom: "6px" }}>✅ Correct Guesses</h4>
           <ul style={{ paddingLeft: "16px", fontSize: "13px" }}>
             {[...correctAnswers]
               .sort((a, b) => a.rank - b.rank)
@@ -392,28 +251,25 @@ function GamePage() {
         </div>
       )}
 
-      {/* Reveal All Answers on Challenge Completion or Game Over */}
-      {(found === 10 || lives === 0) && allAnswers.length > 0 && (
+      {status !== "active" && allAnswers.length > 0 && (
         <div style={{ marginBottom: "14px" }}>
           <h4 style={{ fontSize: "14px", marginBottom: "6px" }}>
-            {found === 10 ? "🏆 All 10 Players Found!" : "📋 Top 10 Answers"}
+            {status === "won" ? "🏆 All 10 Players Found!" : "📋 Top 10 Answers"}
           </h4>
           <ul style={{ paddingLeft: "16px", fontSize: "13px" }}>
             {allAnswers.map((item) => {
-              const isGuessed = correctAnswers.some(
-                (a) => a.player === item.player
-              );
+              const isGuessed = correctAnswers.some((a) => a.player === item.player);
               return (
                 <li
                   key={item.rank}
                   style={{
                     marginBottom: "4px",
-                    color: isGuessed ? "#4ade80" : found === 10 ? "#4ade80" : "#f87171",
+                    color: isGuessed || status === "won" ? "#4ade80" : "#f87171",
                     fontWeight: isGuessed ? 600 : 400,
                   }}
                 >
-                  #{item.rank} — {item.player} {!isGuessed && lives === 0 && "❌"}
-                  {isGuessed && found === 10 && " ✅"}
+                  #{item.rank} — {item.player} {!isGuessed && status === "lost" && "❌"}
+                  {isGuessed && status === "won" && " ✅"}
                 </li>
               );
             })}
@@ -421,9 +277,8 @@ function GamePage() {
         </div>
       )}
 
-      {/* Reset */}
       <button
-        onClick={handleReset}
+        onClick={() => void reset()}
         disabled={loading}
         style={{
           width: "100%",
