@@ -5,3 +5,8 @@
 
 # Logs
 *.log
+
+# SQLite local artifacts
+*.db
+*.db-shm
+*.db-wal

@@ -85,7 +85,29 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseStartup");
+    var runMigrations = builder.Configuration.GetValue("Database:RunMigrationsOnStartup", true);
+    var allowDevFallbackEnsureCreated = builder.Configuration.GetValue("Database:AllowDevEnsureCreatedFallback", true);
+
+    if (runMigrations)
+    {
+        try
+        {
+            logger.LogInformation("Applying database migrations on startup.");
+            db.Database.Migrate();
+            logger.LogInformation("Database migrations completed.");
+        }
+        catch (Exception ex) when (app.Environment.IsDevelopment() && allowDevFallbackEnsureCreated)
+        {
+            logger.LogWarning(ex, "Migration failed in Development. Falling back to EnsureCreated().");
+            db.Database.EnsureCreated();
+            logger.LogInformation("EnsureCreated fallback completed.");
+        }
+    }
+    else
+    {
+        logger.LogWarning("Database migrations are disabled by configuration.");
+    }
 }
 
 app.UseCors("AllowFrontend");
