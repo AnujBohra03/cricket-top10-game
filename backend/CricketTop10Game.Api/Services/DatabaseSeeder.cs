@@ -54,16 +54,23 @@ public class DatabaseSeeder
         };
 
         _db.Questions.Add(question);
-
-        var playerPool = DefaultAnswers.Select(a => new Player
-        {
-            Name = a.Player,
-            NormalizedName = Normalize(a.Player)
-        });
-        _db.Players.AddRange(playerPool);
-
         _db.SaveChanges();
         _logger.LogWarning("Seeded default question because the Questions table was empty.");
+
+        try
+        {
+            var playerPool = DefaultAnswers.Select(a => new Player
+            {
+                Name = a.Player,
+                NormalizedName = Normalize(a.Player)
+            });
+            _db.Players.AddRange(playerPool);
+            _db.SaveChanges();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Skipped default Players seeding. Questions are seeded and gameplay can continue.");
+        }
     }
 
     private static string Normalize(string value) => value.Trim().ToLowerInvariant();
