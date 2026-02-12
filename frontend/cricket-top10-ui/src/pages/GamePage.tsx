@@ -7,7 +7,7 @@ import {
   getAnswers,
 } from "../api/api";
 import GameCard from "../components/GameCard";
-import type { Question, Answer, GuessResult, GameState } from "../types/game";
+import type { Question, Answer, GuessResponse, GameState } from "../types/game";
 
 function GamePage() {
   const [question, setQuestion] = useState<Question | null>(null);
@@ -34,10 +34,7 @@ function GamePage() {
         setQuestion(q);
         setLives(s.lives);
         setFound(s.found);
-        // Restore previously guessed players
-        if (s.correctGuesses && Array.isArray(s.correctGuesses)) {
-          setCorrectAnswers(s.correctGuesses);
-        }
+        setCorrectAnswers(s.correctGuesses);
         // If challenge is already completed, load all answers
         if (s.found === 10 && q) {
           try {
@@ -78,27 +75,25 @@ function GamePage() {
     try {
       setError("");
       setLoading(true);
-      const result: GuessResult = await makeGuess(question.id, trimmedGuess);
+      const response: GuessResponse = await makeGuess(question.id, trimmedGuess);
+      const result = response.result;
 
       if (result.correct) {
         setMessage(`✅ ${result.player} is Rank #${result.rank}`);
-        setCorrectAnswers((prev) => [
-          ...prev,
-          { player: result.player!, rank: result.rank! },
-        ]);
       } else if (result.message === "Already guessed") {
         setMessage("⚠️ Already guessed");
       } else {
         setMessage("❌ Wrong guess");
       }
 
-      const s = await getState();
+      const s = response.state;
       setLives(s.lives);
       setFound(s.found);
+      setCorrectAnswers(s.correctGuesses);
       setGuess("");
 
       // Check if challenge is completed (all 10 found)
-      if (s.found === 10 && question) {
+      if (response.gameStatus === "won" && question) {
         try {
           // Reveal all answers when completed
           const answers: Answer[] = await getAnswers(question.id);
@@ -113,7 +108,7 @@ function GamePage() {
       }
 
       // 🔥 Reveal answers ONLY when game ends (lives = 0)
-      if (s.lives === 0 && question && s.found < 10) {
+      if (response.gameStatus === "lost" && question) {
         try {
           const answers: Answer[] = await getAnswers(question.id);
           setAllAnswers(answers);
@@ -142,7 +137,7 @@ function GamePage() {
       setError("");
       setLoading(true);
       await resetGame();
-      const s = await getState();
+      const s: GameState = await getState();
 
       setLives(s.lives);
       setFound(s.found);
@@ -386,7 +381,7 @@ function GamePage() {
             ✅ Correct Guesses
           </h4>
           <ul style={{ paddingLeft: "16px", fontSize: "13px" }}>
-            {correctAnswers
+            {[...correctAnswers]
               .sort((a, b) => a.rank - b.rank)
               .map((item) => (
                 <li key={item.player}>

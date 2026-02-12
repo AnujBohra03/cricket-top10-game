@@ -1,3 +1,5 @@
+namespace CricketTop10Game.Api.Models;
+
 public class GuessResult
 {
     public bool Correct { get; set; }

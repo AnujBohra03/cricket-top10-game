@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using CricketTop10Game.Api.Services;
 using CricketTop10Game.Api.Dtos;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace CricketTop10Game.Api.Controllers;
 
 [ApiController]
-[Route("")]
+[Route("api/v1")]
+ [EnableRateLimiting("gameplay")]
 public class GameController : ControllerBase
 {
     private readonly GameService _game;
@@ -25,101 +27,64 @@ public class GameController : ControllerBase
         return Guid.NewGuid();
     }
 
-    [HttpGet("question")]
-    public IActionResult GetQuestion()
+    [HttpGet("questions/current")]
+    public async Task<IActionResult> GetCurrentQuestion(CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = GetOrCreateSessionId();
-            var question = _game.GetQuestion(sessionId);
-            Response.Headers["X-Session-Id"] = sessionId.ToString();
-            return Ok(question);
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound(new { error = "No questions available" });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { error = "An error occurred while fetching the question" });
-        }
+        var sessionId = GetOrCreateSessionId();
+        var question = await _game.GetOrCreateCurrentQuestionAsync(sessionId, cancellationToken);
+        Response.Headers["X-Session-Id"] = sessionId.ToString();
+        return Ok(question);
     }
 
     [HttpGet("state")]
-    public IActionResult GetState()
+    public async Task<IActionResult> GetState(CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = GetOrCreateSessionId();
-            var state = _game.GetState(sessionId);
-            Response.Headers["X-Session-Id"] = sessionId.ToString();
-            return Ok(state);
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { error = "An error occurred while fetching game state" });
-        }
+        var sessionId = GetOrCreateSessionId();
+        var state = await _game.GetStateAsync(sessionId, cancellationToken);
+        Response.Headers["X-Session-Id"] = sessionId.ToString();
+        return Ok(state);
     }
 
     [HttpPost("guess")]
-    public IActionResult Guess([FromBody] GuessRequestDto request)
+    public async Task<IActionResult> Guess([FromBody] GuessRequestDto request, CancellationToken cancellationToken)
     {
-        try
+        if (request == null)
         {
-            if (request == null)
-                return BadRequest(new { error = "Request body is required" });
-
-            if (string.IsNullOrWhiteSpace(request.Guess))
-                return BadRequest(new { error = "Guess is required" });
-
-            if (request.QuestionId == Guid.Empty)
-                return BadRequest(new { error = "Valid question ID is required" });
-
-            var sessionId = GetOrCreateSessionId();
-            var result = _game.Guess(sessionId, request.QuestionId, request.Guess);
-            Response.Headers["X-Session-Id"] = sessionId.ToString();
-            return Ok(result);
+            return Problem(detail: "Request body is required", statusCode: StatusCodes.Status400BadRequest);
         }
-        catch (ArgumentException ex)
+        if (string.IsNullOrWhiteSpace(request.Guess))
         {
-            return BadRequest(new { error = ex.Message });
+            return Problem(detail: "Guess is required", statusCode: StatusCodes.Status400BadRequest);
         }
-        catch (Exception)
+        if (request.QuestionId == Guid.Empty)
         {
-            return StatusCode(500, new { error = "An error occurred while processing your guess" });
+            return Problem(detail: "Valid question ID is required", statusCode: StatusCodes.Status400BadRequest);
         }
+
+        var sessionId = GetOrCreateSessionId();
+        var response = await _game.GuessAsync(sessionId, request.QuestionId, request.Guess, cancellationToken);
+        Response.Headers["X-Session-Id"] = sessionId.ToString();
+        return Ok(response);
     }
 
     [HttpPost("reset")]
-    public IActionResult Reset()
+    public async Task<IActionResult> Reset(CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = GetOrCreateSessionId();
-            _game.Reset(sessionId);
-            Response.Headers["X-Session-Id"] = sessionId.ToString();
-            return Ok(new { message = "Game reset successfully" });
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { error = "An error occurred while resetting the game" });
-        }
+        var sessionId = GetOrCreateSessionId();
+        await _game.ResetAsync(sessionId, cancellationToken);
+        Response.Headers["X-Session-Id"] = sessionId.ToString();
+        return Ok(new { message = "Game reset successfully" });
     }
 
     [HttpGet("answers")]
-    public IActionResult Answers([FromQuery] Guid questionId)
+    public async Task<IActionResult> Answers([FromQuery] Guid questionId, CancellationToken cancellationToken)
     {
-        try
+        if (questionId == Guid.Empty)
         {
-            if (questionId == Guid.Empty)
-                return BadRequest(new { error = "Valid question ID is required" });
+            return Problem(detail: "Valid question ID is required", statusCode: StatusCodes.Status400BadRequest);
+        }
 
-            var answers = _game.GetAllAnswers(questionId);
-            return Ok(answers);
-        }
-        catch (Exception)
-        {
-            return StatusCode(500, new { error = "An error occurred while fetching answers" });
-        }
+        var answers = await _game.GetAllAnswersAsync(questionId, cancellationToken);
+        return Ok(answers);
     }
 }
