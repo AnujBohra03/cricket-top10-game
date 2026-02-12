@@ -5,6 +5,7 @@ import {
   parseGameState,
   parseGuessResponse,
   parseQuestion,
+  parseQuestions,
 } from "../utils/apiGuards";
 
 function normalizeApiBaseUrl(rawBaseUrl: string): string {
@@ -13,7 +14,7 @@ function normalizeApiBaseUrl(rawBaseUrl: string): string {
 }
 
 const BASE_URL = normalizeApiBaseUrl(
-  import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com"
+  import.meta.env.VITE_API_URL || "http://localhost:5150"
 );
 const API_PREFIX = "/api/v1";
 
@@ -73,9 +74,17 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   }
 }
 
-export async function getQuestion(): Promise<Question> {
-  const data = await request("/questions/current");
+export async function getQuestion(questionId?: string): Promise<Question> {
+  const suffix = questionId
+    ? `/questions/current?questionId=${encodeURIComponent(questionId)}`
+    : "/questions/current";
+  const data = await request(suffix);
   return parseQuestion(data);
+}
+
+export async function getQuestions(): Promise<Question[]> {
+  const data = await request("/questions");
+  return parseQuestions(data);
 }
 
 export async function getState(): Promise<GameState> {
