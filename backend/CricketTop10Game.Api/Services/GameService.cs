@@ -310,7 +310,6 @@ public class GameService
         }
 
         session.Lives = _gameOptions.InitialLives;
-        session.GuessedPlayersJson = "[]";
         session.UpdatedAt = DateTime.UtcNow;
 
         var guesses = _db.SessionGuesses.Where(g => g.SessionId == sessionId);
@@ -354,7 +353,6 @@ public class GameService
                 SessionId = sessionId,
                 QuestionId = questionId,
                 Lives = _gameOptions.InitialLives,
-                GuessedPlayersJson = "[]",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -367,7 +365,6 @@ public class GameService
         {
             session.QuestionId = questionId;
             session.Lives = _gameOptions.InitialLives;
-            session.GuessedPlayersJson = "[]";
             session.UpdatedAt = DateTime.UtcNow;
             var guesses = _db.SessionGuesses.Where(g => g.SessionId == sessionId);
             _db.SessionGuesses.RemoveRange(guesses);
