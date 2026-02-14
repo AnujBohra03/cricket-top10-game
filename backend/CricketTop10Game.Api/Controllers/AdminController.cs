@@ -111,4 +111,23 @@ public class AdminController : ControllerBase
 
         return Ok(question);
     }
+
+    [HttpDelete("questions/{questionId:guid}")]
+    public async Task<IActionResult> DeleteQuestion(Guid questionId, CancellationToken cancellationToken)
+    {
+        var question = await _db.Questions
+            .FirstOrDefaultAsync(q => q.Id == questionId, cancellationToken);
+
+        if (question is null)
+        {
+            return NotFound();
+        }
+
+        var relatedAnswers = _db.Answers.Where(a => a.QuestionId == questionId);
+        _db.Answers.RemoveRange(relatedAnswers);
+        _db.Questions.Remove(question);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
 }
