@@ -33,9 +33,11 @@ builder.Services.AddRateLimiter(options =>
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Data Source=cricket.db";
+var configuredProvider = builder.Configuration.GetValue<string>("Database:Provider");
+var databaseProvider = DatabaseProviderResolver.Resolve(configuredProvider, connectionString);
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase))
+    if (databaseProvider.Equals(DatabaseProviderResolver.Postgres, StringComparison.OrdinalIgnoreCase))
     {
         options.UseNpgsql(connectionString);
     }
@@ -91,7 +93,15 @@ using (var scope = app.Services.CreateScope())
     var runMigrations = builder.Configuration.GetValue("Database:RunMigrationsOnStartup", true);
     var allowDevFallbackEnsureCreated = builder.Configuration.GetValue("Database:AllowDevEnsureCreatedFallback", true);
     var seedDefaultQuestionOnStartup = builder.Configuration.GetValue("Database:SeedDefaultQuestionOnStartup", false);
-    var isUsingSqlite = !connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase);
+    var isUsingSqlite = databaseProvider.Equals(DatabaseProviderResolver.Sqlite, StringComparison.OrdinalIgnoreCase);
+
+    logger.LogInformation("Database provider resolved to {DatabaseProvider}.", databaseProvider);
+
+    if (databaseProvider.Equals(DatabaseProviderResolver.Postgres, StringComparison.OrdinalIgnoreCase) &&
+        string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")))
+    {
+        throw new InvalidOperationException("Database provider is Postgres but ConnectionStrings:DefaultConnection is missing.");
+    }
 
     if (app.Environment.IsProduction() && isUsingSqlite)
     {
