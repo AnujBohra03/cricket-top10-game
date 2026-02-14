@@ -1,7 +1,15 @@
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
-function MainLayout({ children }: { children: React.ReactNode }) {
+function MainLayout({
+  children,
+  theme,
+  onToggleTheme,
+}: {
+  children: React.ReactNode;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
+}) {
   return (
     <div
       style={{
@@ -10,18 +18,19 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         flexDirection: "column",
       }}
     >
-      <Header />
+      <Header theme={theme} onToggleTheme={onToggleTheme} />
 
-      {/* TRUE CENTER AREA */}
-      <div
+      <main
         style={{
           flex: 1,
-          display: "grid",
-          placeItems: "center",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "flex-start",
+          width: "100%",
         }}
       >
         {children}
-      </div>
+      </main>
 
       <Footer />
     </div>
