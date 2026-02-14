@@ -5,6 +5,7 @@ import type { Answer, Question } from "../types/game";
 type SessionStatus = "active" | "won" | "lost";
 type FeedbackTone = "success" | "error" | "warning" | "neutral";
 type AttemptOutcome = "correct" | "incorrect" | "duplicate";
+type GuessStatus = "correct";
 
 interface FeedbackState {
   tone: FeedbackTone;
@@ -15,6 +16,19 @@ interface GuessAttempt {
   player: string;
   outcome: AttemptOutcome;
   rank?: number;
+}
+
+interface SuggestionOption {
+  value: string;
+  playerId: string;
+  alreadySelected: boolean;
+}
+
+interface GuessedPlayer {
+  playerId: string;
+  player: string;
+  rank?: number;
+  status: GuessStatus;
 }
 
 interface UseGameSessionResult {
@@ -28,7 +42,8 @@ interface UseGameSessionResult {
   correctAnswers: Answer[];
   allAnswers: Answer[];
   attempts: GuessAttempt[];
-  suggestions: string[];
+  guessedPlayers: GuessedPlayer[];
+  suggestions: SuggestionOption[];
   selectedSuggestionIndex: number;
   error: string;
   loading: boolean;
@@ -47,6 +62,44 @@ interface UseGameSessionResult {
   goToNextQuestion: () => Promise<void>;
 }
 
+function normalizeText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function toPlayerId(name: string): string {
+  return normalizeText(name);
+}
+
+function sortGuessedPlayers(rows: GuessedPlayer[]): GuessedPlayer[] {
+  return [...rows].sort((a, b) => {
+    if (typeof a.rank === "number" && typeof b.rank === "number") {
+      return a.rank - b.rank;
+    }
+    if (typeof a.rank === "number") {
+      return -1;
+    }
+    if (typeof b.rank === "number") {
+      return 1;
+    }
+    return a.player.localeCompare(b.player);
+  });
+}
+
+function toCorrectRows(correctGuesses: Answer[]): GuessedPlayer[] {
+  const rows = correctGuesses.map((item) => ({
+    playerId: toPlayerId(item.player),
+    player: item.player,
+    rank: item.rank,
+    status: "correct" as const,
+  }));
+  return sortGuessedPlayers(rows);
+}
+
 export function useGameSession(): UseGameSessionResult {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -58,7 +111,8 @@ export function useGameSession(): UseGameSessionResult {
   const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
   const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
   const [attempts, setAttempts] = useState<GuessAttempt[]>([]);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [guessedPlayers, setGuessedPlayers] = useState<GuessedPlayer[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestionOption[]>([]);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,12 +126,43 @@ export function useGameSession(): UseGameSessionResult {
     setAttempts((previous) => [attempt, ...previous].slice(0, 12));
   }, []);
 
+  const mergeCorrectRows = useCallback((nextCorrectGuesses: Answer[]) => {
+    setGuessedPlayers((previous) => {
+      const byId = new Map(previous.map((item) => [item.playerId, item]));
+
+      nextCorrectGuesses.forEach((item) => {
+        const playerId = toPlayerId(item.player);
+        if (!playerId) {
+          return;
+        }
+        byId.set(playerId, {
+          playerId,
+          player: item.player,
+          rank: item.rank,
+          status: "correct",
+        });
+      });
+
+      return sortGuessedPlayers(Array.from(byId.values()));
+    });
+  }, []);
+
   const formatSuggestionList = useCallback((query: string, raw: string[]): string[] => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const unique = Array.from(new Set(raw));
+    const normalizedQuery = normalizeText(query);
+    const uniqueMap = new Map<string, string>();
+
+    raw.forEach((item) => {
+      const playerId = toPlayerId(item);
+      if (!playerId || uniqueMap.has(playerId)) {
+        return;
+      }
+      uniqueMap.set(playerId, item);
+    });
+
+    const unique = Array.from(uniqueMap.values());
     return unique.sort((a, b) => {
-      const aLower = a.toLowerCase();
-      const bLower = b.toLowerCase();
+      const aLower = normalizeText(a);
+      const bLower = normalizeText(b);
       const aStarts = aLower.startsWith(normalizedQuery) ? 0 : 1;
       const bStarts = bLower.startsWith(normalizedQuery) ? 0 : 1;
       if (aStarts !== bStarts) {
@@ -98,6 +183,18 @@ export function useGameSession(): UseGameSessionResult {
       setAllAnswers(answers);
     }
   }, []);
+
+  const decorateSuggestions = useCallback((values: string[]): SuggestionOption[] => {
+    const guessedIds = new Set(guessedPlayers.map((item) => item.playerId));
+    return values.map((value) => {
+      const playerId = toPlayerId(value);
+      return {
+        value,
+        playerId,
+        alreadySelected: guessedIds.has(playerId),
+      };
+    });
+  }, [guessedPlayers]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -121,6 +218,7 @@ export function useGameSession(): UseGameSessionResult {
         setLives(s.lives);
         setFound(s.found);
         setCorrectAnswers(s.correctGuesses);
+        setGuessedPlayers(toCorrectRows(s.correctGuesses));
 
         const derivedStatus: SessionStatus = s.found >= 10 ? "won" : s.lives <= 0 ? "lost" : "active";
         setStatus(derivedStatus);
@@ -141,7 +239,7 @@ export function useGameSession(): UseGameSessionResult {
       }
     }
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
@@ -161,11 +259,12 @@ export function useGameSession(): UseGameSessionResult {
       return;
     }
 
-    const normalizedQuery = guess.trim().toLowerCase();
+    const normalizedQuery = normalizeText(guess);
     const cached = suggestionsCacheRef.current.get(normalizedQuery);
     if (cached) {
-      setSuggestions(cached);
-      setSelectedSuggestionIndex(cached.length > 0 ? 0 : -1);
+      const decorated = decorateSuggestions(cached);
+      setSuggestions(decorated);
+      setSelectedSuggestionIndex(decorated.length > 0 ? 0 : -1);
       return;
     }
 
@@ -175,8 +274,9 @@ export function useGameSession(): UseGameSessionResult {
         const sorted = formatSuggestionList(guess, result);
         suggestionsCacheRef.current.set(normalizedQuery, sorted);
         if (isMountedRef.current) {
-          setSuggestions(sorted);
-          setSelectedSuggestionIndex(sorted.length > 0 ? 0 : -1);
+          const decorated = decorateSuggestions(sorted);
+          setSuggestions(decorated);
+          setSelectedSuggestionIndex(decorated.length > 0 ? 0 : -1);
         }
       } catch {
         if (isMountedRef.current) {
@@ -187,7 +287,7 @@ export function useGameSession(): UseGameSessionResult {
     }, 180);
 
     return () => clearTimeout(timer);
-  }, [formatSuggestionList, guess]);
+  }, [decorateSuggestions, formatSuggestionList, guess]);
 
   const loadQuestionByIndex = useCallback(
     async (nextIndex: number) => {
@@ -206,6 +306,7 @@ export function useGameSession(): UseGameSessionResult {
         setLives(s.lives);
         setFound(s.found);
         setCorrectAnswers(s.correctGuesses);
+        setGuessedPlayers(toCorrectRows(s.correctGuesses));
         setGuess("");
         setFeedback({ tone: "neutral", text: "" });
         setAttempts([]);
@@ -252,10 +353,11 @@ export function useGameSession(): UseGameSessionResult {
       return;
     }
 
-    const normalizedGuess = trimmedGuess.toLowerCase();
-    const existing = correctAnswers.some((item) => item.player.toLowerCase() === normalizedGuess);
-    if (existing) {
-      setFeedback({ tone: "warning", text: `${trimmedGuess} is already in your correct guesses.` });
+    const normalizedGuessId = toPlayerId(trimmedGuess);
+    const existingGuess = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
+    if (existingGuess) {
+      const suffix = typeof existingGuess.rank === "number" ? ` (#${existingGuess.rank})` : "";
+      setFeedback({ tone: "warning", text: `Already guessed: ${existingGuess.player}${suffix}` });
       pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       setGuess("");
       setSuggestions([]);
@@ -271,7 +373,9 @@ export function useGameSession(): UseGameSessionResult {
 
       if (result.correct) {
         const resolvedPlayer = result.player ?? trimmedGuess;
-        const resolvedRank = result.rank ?? response.state.correctGuesses.find((item) => item.player === resolvedPlayer)?.rank;
+        const resolvedRank =
+          result.rank ?? response.state.correctGuesses.find((item) => toPlayerId(item.player) === toPlayerId(resolvedPlayer))?.rank;
+
         setFeedback({
           tone: "success",
           text: resolvedRank
@@ -280,7 +384,9 @@ export function useGameSession(): UseGameSessionResult {
         });
         pushAttempt({ player: resolvedPlayer, outcome: "correct", rank: resolvedRank });
       } else if (result.message === "Already guessed") {
-        setFeedback({ tone: "warning", text: `${trimmedGuess} was already guessed.` });
+        const existing = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
+        const suffix = existing && typeof existing.rank === "number" ? ` (#${existing.rank})` : "";
+        setFeedback({ tone: "warning", text: `Already guessed: ${existing?.player ?? trimmedGuess}${suffix}` });
         pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       } else {
         setFeedback({ tone: "error", text: `${trimmedGuess} is not in the Top 10 for this question.` });
@@ -290,6 +396,7 @@ export function useGameSession(): UseGameSessionResult {
       setLives(response.state.lives);
       setFound(response.state.found);
       setCorrectAnswers(response.state.correctGuesses);
+      mergeCorrectRows(response.state.correctGuesses);
       setStatus(response.gameStatus);
       setGuess("");
       setSuggestions([]);
@@ -308,7 +415,7 @@ export function useGameSession(): UseGameSessionResult {
         setLoading(false);
       }
     }
-  }, [correctAnswers, found, guess, lives, pushAttempt, question, refreshAllAnswers]);
+  }, [found, guess, guessedPlayers, lives, mergeCorrectRows, pushAttempt, question, refreshAllAnswers]);
 
   const reset = useCallback(async () => {
     try {
@@ -322,6 +429,7 @@ export function useGameSession(): UseGameSessionResult {
       setGuess("");
       setFeedback({ tone: "neutral", text: "" });
       setCorrectAnswers(s.correctGuesses);
+      setGuessedPlayers(toCorrectRows(s.correctGuesses));
       setAllAnswers([]);
       setAttempts([]);
       setStatus("active");
@@ -370,8 +478,17 @@ export function useGameSession(): UseGameSessionResult {
     if (selectedSuggestionIndex < 0 || selectedSuggestionIndex >= suggestions.length) {
       return;
     }
-    applySuggestion(suggestions[selectedSuggestionIndex]);
-  }, [applySuggestion, selectedSuggestionIndex, suggestions]);
+
+    const selection = suggestions[selectedSuggestionIndex];
+    if (selection.alreadySelected) {
+      const existing = guessedPlayers.find((item) => item.playerId === selection.playerId);
+      const suffix = existing && typeof existing.rank === "number" ? ` (#${existing.rank})` : "";
+      setFeedback({ tone: "warning", text: `Already guessed: ${existing?.player ?? selection.value}${suffix}` });
+      return;
+    }
+
+    applySuggestion(selection.value);
+  }, [applySuggestion, guessedPlayers, selectedSuggestionIndex, suggestions]);
 
   const dismissFeedback = useCallback(() => {
     setFeedback({ tone: "neutral", text: "" });
@@ -388,6 +505,7 @@ export function useGameSession(): UseGameSessionResult {
     correctAnswers,
     allAnswers,
     attempts,
+    guessedPlayers,
     suggestions,
     selectedSuggestionIndex,
     error,
