@@ -14,7 +14,7 @@ function normalizeApiBaseUrl(rawBaseUrl: string): string {
 }
 
 const BASE_URL = normalizeApiBaseUrl(
-  import.meta.env.VITE_API_URL || "http://localhost:5150"
+  import.meta.env.VITE_API_URL || "https://cricket-top10-api.onrender.com"
 );
 const API_PREFIX = "/api/v1";
 
