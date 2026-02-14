@@ -13,6 +13,11 @@ namespace CricketTop10Game.Api.Migrations
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            var isPostgres = ActiveProvider.Contains("Npgsql", StringComparison.OrdinalIgnoreCase);
+            var guidType = isPostgres ? "uuid" : "TEXT";
+            var stringType = "TEXT";
+            var dateType = isPostgres ? "timestamp with time zone" : "TEXT";
+
             if (!ActiveProvider.Contains("Sqlite", StringComparison.OrdinalIgnoreCase))
             {
                 migrationBuilder.DropColumn(
@@ -24,11 +29,11 @@ namespace CricketTop10Game.Api.Migrations
                 name: "SessionGuesses",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    SessionId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    QuestionId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    NormalizedPlayer = table.Column<string>(type: "TEXT", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false)
+                    Id = table.Column<Guid>(type: guidType, nullable: false),
+                    SessionId = table.Column<Guid>(type: guidType, nullable: false),
+                    QuestionId = table.Column<Guid>(type: guidType, nullable: false),
+                    NormalizedPlayer = table.Column<string>(type: stringType, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: dateType, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -62,6 +67,8 @@ namespace CricketTop10Game.Api.Migrations
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            var stringType = "TEXT";
+
             migrationBuilder.DropTable(
                 name: "SessionGuesses");
 
@@ -78,7 +85,7 @@ namespace CricketTop10Game.Api.Migrations
                 migrationBuilder.AddColumn<string>(
                     name: "GuessedPlayersJson",
                     table: "GameSessions",
-                    type: "TEXT",
+                    type: stringType,
                     nullable: false,
                     defaultValue: "[]");
             }

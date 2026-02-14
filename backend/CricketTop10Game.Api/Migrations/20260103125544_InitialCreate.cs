@@ -11,12 +11,17 @@ namespace CricketTop10Game.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            var isPostgres = ActiveProvider.Contains("Npgsql", StringComparison.OrdinalIgnoreCase);
+            var guidType = isPostgres ? "uuid" : "TEXT";
+            var stringType = "TEXT";
+            var intType = "INTEGER";
+
             migrationBuilder.CreateTable(
                 name: "Questions",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Text = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<Guid>(type: guidType, nullable: false),
+                    Text = table.Column<string>(type: stringType, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -27,11 +32,11 @@ namespace CricketTop10Game.Api.Migrations
                 name: "Answers",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    QuestionId = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Player = table.Column<string>(type: "TEXT", nullable: false),
-                    NormalizedPlayer = table.Column<string>(type: "TEXT", nullable: false),
-                    Rank = table.Column<int>(type: "INTEGER", nullable: false)
+                    Id = table.Column<Guid>(type: guidType, nullable: false),
+                    QuestionId = table.Column<Guid>(type: guidType, nullable: false),
+                    Player = table.Column<string>(type: stringType, nullable: false),
+                    NormalizedPlayer = table.Column<string>(type: stringType, nullable: false),
+                    Rank = table.Column<int>(type: intType, nullable: false)
                 },
                 constraints: table =>
                 {

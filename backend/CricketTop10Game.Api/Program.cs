@@ -32,19 +32,10 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Data Source=cricket.db";
-var configuredProvider = builder.Configuration.GetValue<string>("Database:Provider");
-var databaseProvider = DatabaseProviderResolver.Resolve(configuredProvider, connectionString);
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required.");
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (databaseProvider.Equals(DatabaseProviderResolver.Postgres, StringComparison.OrdinalIgnoreCase))
-    {
-        options.UseNpgsql(connectionString);
-    }
-    else
-    {
-        options.UseSqlite(connectionString);
-    }
+    options.UseNpgsql(connectionString);
 });
 
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -91,22 +82,8 @@ using (var scope = app.Services.CreateScope())
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseStartup");
     var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
     var runMigrations = builder.Configuration.GetValue("Database:RunMigrationsOnStartup", true);
-    var allowDevFallbackEnsureCreated = builder.Configuration.GetValue("Database:AllowDevEnsureCreatedFallback", true);
     var seedDefaultQuestionOnStartup = builder.Configuration.GetValue("Database:SeedDefaultQuestionOnStartup", false);
-    var isUsingSqlite = databaseProvider.Equals(DatabaseProviderResolver.Sqlite, StringComparison.OrdinalIgnoreCase);
-
-    logger.LogInformation("Database provider resolved to {DatabaseProvider}.", databaseProvider);
-
-    if (databaseProvider.Equals(DatabaseProviderResolver.Postgres, StringComparison.OrdinalIgnoreCase) &&
-        string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("DefaultConnection")))
-    {
-        throw new InvalidOperationException("Database provider is Postgres but ConnectionStrings:DefaultConnection is missing.");
-    }
-
-    if (app.Environment.IsProduction() && isUsingSqlite)
-    {
-        logger.LogWarning("Production is using SQLite ({ConnectionString}). Use a persistent PostgreSQL connection string in Render to avoid losing data across deploys.", connectionString);
-    }
+    logger.LogInformation("Database provider resolved to Postgres.");
 
     if (runMigrations)
     {
@@ -116,11 +93,10 @@ using (var scope = app.Services.CreateScope())
             db.Database.Migrate();
             logger.LogInformation("Database migrations completed.");
         }
-        catch (Exception ex) when (app.Environment.IsDevelopment() && allowDevFallbackEnsureCreated)
+        catch (Exception ex)
         {
-            logger.LogWarning(ex, "Migration failed in Development. Falling back to EnsureCreated().");
-            db.Database.EnsureCreated();
-            logger.LogInformation("EnsureCreated fallback completed.");
+            logger.LogError(ex, "Database migration failed.");
+            throw;
         }
     }
     else

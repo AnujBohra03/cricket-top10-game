@@ -15,19 +15,11 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
             .AddEnvironmentVariables()
             .Build();
 
-        var connectionString = config.GetConnectionString("DefaultConnection") ?? "Data Source=cricket.db";
-        var configuredProvider = config.GetValue<string>("Database:Provider");
-        var provider = DatabaseProviderResolver.Resolve(configuredProvider, connectionString);
+        var connectionString = config.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required for design-time DbContext.");
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        if (provider.Equals(DatabaseProviderResolver.Postgres, StringComparison.OrdinalIgnoreCase))
-        {
-            optionsBuilder.UseNpgsql(connectionString);
-        }
-        else
-        {
-            optionsBuilder.UseSqlite(connectionString);
-        }
+        optionsBuilder.UseNpgsql(connectionString);
 
         return new AppDbContext(optionsBuilder.Options);
     }
