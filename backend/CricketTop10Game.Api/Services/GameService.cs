@@ -84,18 +84,25 @@ public class GameService
 
         try
         {
-            return await _db.Players.AsNoTracking()
+            var fromPlayers = await _db.Players.AsNoTracking()
                 .Where(p => p.NormalizedName.Contains(normalizedQuery))
                 .OrderBy(p => p.NormalizedName.StartsWith(normalizedQuery) ? 0 : 1)
                 .ThenBy(p => p.Name)
                 .Take(8)
                 .Select(p => p.Name)
                 .ToListAsync(cancellationToken);
+
+            if (fromPlayers.Count > 0)
+            {
+                return fromPlayers;
+            }
+
+            return await SuggestFromAnswersAsync(normalizedQuery, cancellationToken);
         }
         catch (Exception ex) when (IsMissingPlayersTable(ex))
         {
-            _logger.LogWarning(ex, "Players table is unavailable. Returning no suggestions.");
-            return new List<string>();
+            _logger.LogWarning(ex, "Players table is unavailable. Falling back to suggestions from Answers.");
+            return await SuggestFromAnswersAsync(normalizedQuery, cancellationToken);
         }
     }
 
@@ -375,6 +382,18 @@ public class GameService
     }
 
     private static string Normalize(string input) => input.Trim().ToLowerInvariant();
+
+    private async Task<List<string>> SuggestFromAnswersAsync(string normalizedQuery, CancellationToken cancellationToken)
+    {
+        return await _db.Answers.AsNoTracking()
+            .Where(a => a.NormalizedPlayer.Contains(normalizedQuery))
+            .OrderBy(a => a.NormalizedPlayer.StartsWith(normalizedQuery) ? 0 : 1)
+            .ThenBy(a => a.Player)
+            .Select(a => a.Player)
+            .Distinct()
+            .Take(8)
+            .ToListAsync(cancellationToken);
+    }
 
     private static bool IsMissingPlayersTable(Exception ex)
     {
