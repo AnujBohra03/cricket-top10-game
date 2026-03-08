@@ -356,7 +356,7 @@ export function useGameSession(): UseGameSessionResult {
     const existingGuess = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
     if (existingGuess) {
       const suffix = typeof existingGuess.rank === "number" ? ` (#${existingGuess.rank})` : "";
-      setFeedback({ tone: "warning", text: `Already guessed: ${existingGuess.player}${suffix}` });
+      setFeedback({ tone: "warning", text: `Already found ${existingGuess.player}${suffix} 👀` });
       pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       setGuess("");
       setSuggestions([]);
@@ -378,17 +378,17 @@ export function useGameSession(): UseGameSessionResult {
         setFeedback({
           tone: "success",
           text: resolvedRank
-            ? `${resolvedPlayer} is correct at Rank #${resolvedRank}.`
-            : `${resolvedPlayer} is a correct answer.`,
+            ? `Nice one! 🎯 ${resolvedPlayer} is Rank #${resolvedRank}`
+            : `Nice one! 🎯 ${resolvedPlayer} is correct`,
         });
         pushAttempt({ player: resolvedPlayer, outcome: "correct", rank: resolvedRank });
       } else if (result.message === "Already guessed") {
         const existing = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
         const suffix = existing && typeof existing.rank === "number" ? ` (#${existing.rank})` : "";
-        setFeedback({ tone: "warning", text: `Already guessed: ${existing?.player ?? trimmedGuess}${suffix}` });
+        setFeedback({ tone: "warning", text: `Already found ${existing?.player ?? trimmedGuess}${suffix} 👀` });
         pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       } else {
-        setFeedback({ tone: "error", text: `${trimmedGuess} is not in the Top 10 for this question.` });
+        setFeedback({ tone: "error", text: `Nope! 😅 ${trimmedGuess} isn't in the Top 10` });
         pushAttempt({ player: trimmedGuess, outcome: "incorrect" });
       }
 

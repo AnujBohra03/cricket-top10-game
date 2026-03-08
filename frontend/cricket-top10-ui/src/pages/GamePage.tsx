@@ -147,7 +147,7 @@ function GamePage() {
             onClick={() => setGameStarted(true)}
             disabled={initialLoading}
           >
-            {initialLoading ? "Loading…" : "Start Playing"}
+            {initialLoading ? "Loading…" : "🚀 Start Playing"}
           </button>
         </div>
 
@@ -222,7 +222,7 @@ function GamePage() {
       <section className="status-bar" aria-label="Game status" role="status" aria-live="polite">
         <Lives count={lives} />
         <div className="progress-wrap">
-          <span className="found-label">{found} / 10 found</span>
+          <span className="found-label">🏆 {found} / 10 found</span>
           <div className="progress-track" aria-hidden="true">
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
@@ -232,12 +232,12 @@ function GamePage() {
       {/* ── Game-over banner ── */}
       {status === "won" && (
         <div className="banner banner-won" role="status">
-          All 10 found. Well played!
+          🎉 All 10 found! Champion! 🏆
         </div>
       )}
       {status === "lost" && (
         <div className="banner banner-lost" role="status">
-          Out of lives. See the answers below.
+          😅 Out of lives — better luck next time!
         </div>
       )}
 
@@ -333,7 +333,7 @@ function GamePage() {
       {/* ── Found players (active game) ── */}
       {guessedPlayers.length > 0 && !isGameOver && (
         <section className="found-section" aria-label="Found players">
-          <p className="section-label">Found ({guessedPlayers.length})</p>
+          <p className="section-label">✅ Found ({guessedPlayers.length})</p>
           <ul className="found-list">
             {guessedPlayers.map((p) => (
               <li key={p.playerId} className="found-item">
@@ -349,7 +349,7 @@ function GamePage() {
       {isGameOver && allAnswers.length > 0 && (
         <section className="answers-section" aria-label="Full answer list">
           <p className="section-label">
-            {status === "won" ? "All 10 Players" : "The Answers"}
+            {status === "won" ? "🏆 All 10 Players" : "📋 The Answers"}
           </p>
           <ul className="answers-list">
             {allAnswers.map((a) => {
