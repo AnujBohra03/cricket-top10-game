@@ -1,31 +1,21 @@
-import { useEffect, useState } from "react";
-import GameCard from "../components/GameCard";
+import { useEffect, useRef, useState } from "react";
 import { useGameSession } from "../hooks/useGameSession";
 import "./GamePage.css";
 
-function getFeedbackClassName(tone: "success" | "error" | "warning" | "neutral"): string {
-  if (tone === "success") {
-    return "game-feedback game-feedback-success";
-  }
-  if (tone === "error") {
-    return "game-feedback game-feedback-error";
-  }
-  if (tone === "warning") {
-    return "game-feedback game-feedback-warning";
-  }
-  return "game-feedback game-feedback-neutral";
-}
+const MAX_LIVES = 3;
+
+const HOW_IT_WORKS = [
+  { n: "1", text: "Read the question — it's a cricket stat category." },
+  { n: "2", text: "Type a player name and pick from the dropdown." },
+  { n: "3", text: "Find all 10 players to win. 3 wrong guesses and it's over." },
+];
 
 function renderSuggestionLabel(option: string, query: string): React.ReactNode {
   const trimmedQuery = query.trim();
-  if (!trimmedQuery) {
-    return option;
-  }
+  if (!trimmedQuery) return option;
 
   const index = option.toLowerCase().indexOf(trimmedQuery.toLowerCase());
-  if (index < 0) {
-    return option;
-  }
+  if (index < 0) return option;
 
   const before = option.slice(0, index);
   const match = option.slice(index, index + trimmedQuery.length);
@@ -40,8 +30,55 @@ function renderSuggestionLabel(option: string, query: string): React.ReactNode {
   );
 }
 
+/* ── Sub-components ── */
+
+function Lives({ count }: { count: number }) {
+  return (
+    <div className="lives" aria-label={`${count} of ${MAX_LIVES} lives remaining`}>
+      {Array.from({ length: MAX_LIVES }, (_, i) => (
+        <span key={i} className={`heart ${i < count ? "heart-on" : "heart-off"}`} aria-hidden="true">
+          {i < count ? "♥" : "♡"}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function GiveUpButton({ onGiveUp, loading }: { onGiveUp: () => void; loading: boolean }) {
+  const [confirm, setConfirm] = useState(false);
+
+  if (confirm) {
+    return (
+      <div className="reset-confirm">
+        <p className="reset-question">Give up and reveal all answers?</p>
+        <div className="reset-actions">
+          <button
+            className="btn-danger"
+            onClick={() => { onGiveUp(); setConfirm(false); }}
+            disabled={loading}
+          >
+            Yes, give up
+          </button>
+          <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={loading}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button className="btn-reset" onClick={() => setConfirm(true)} disabled={loading}>
+      Give up
+    </button>
+  );
+}
+
+/* ── Main page ── */
+
 function GamePage() {
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const {
     questions,
@@ -51,11 +88,13 @@ function GamePage() {
     found,
     guess,
     feedback,
+    allAnswers,
     guessedPlayers,
     suggestions,
     selectedSuggestionIndex,
     error,
     loading,
+    isResetting,
     initialLoading,
     status,
     canGoPrevious,
@@ -67,258 +106,274 @@ function GamePage() {
     dismissFeedback,
     submitGuess,
     reset,
+    giveUp,
     goToPreviousQuestion,
     goToNextQuestion,
   } = useGameSession();
 
+  /* Global arrow-key navigation (only when not focused on input) */
   useEffect(() => {
-    function handleKeydown(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const tagName = target?.tagName?.toLowerCase();
-      const isTypingContext = tagName === "input" || tagName === "textarea" || target?.isContentEditable === true;
-
-      if (isTypingContext) {
-        return;
-      }
-
-      if (event.key === "ArrowLeft" && canGoPrevious && !loading) {
-        event.preventDefault();
-        void goToPreviousQuestion();
-      }
-
-      if (event.key === "ArrowRight" && canGoNext && !loading) {
-        event.preventDefault();
-        void goToNextQuestion();
-      }
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (e.key === "ArrowLeft" && canGoPrevious && !loading) { e.preventDefault(); void goToPreviousQuestion(); }
+      if (e.key === "ArrowRight" && canGoNext && !loading) { e.preventDefault(); void goToNextQuestion(); }
     }
-
-    window.addEventListener("keydown", handleKeydown);
-    return () => {
-      window.removeEventListener("keydown", handleKeydown);
-    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [canGoNext, canGoPrevious, goToNextQuestion, goToPreviousQuestion, loading]);
 
+  /* Auto-dismiss success feedback */
   useEffect(() => {
-    if (feedback.tone !== "success" || !feedback.text) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      dismissFeedback();
-    }, 2500);
-    return () => window.clearTimeout(timer);
+    if (feedback.tone !== "success" || !feedback.text) return;
+    const t = window.setTimeout(dismissFeedback, 2500);
+    return () => window.clearTimeout(t);
   }, [dismissFeedback, feedback.text, feedback.tone]);
 
-  if (initialLoading) {
+  const isGameOver = status === "won" || status === "lost";
+  const isInputDisabled = lives === 0 || loading || found === 10 || isGameOver;
+
+  /* ── Landing view ── */
+  if (!gameStarted) {
     return (
-      <GameCard>
-        <div className="game-loading">
-          <div className="game-loading-icon">Loading...</div>
-          <div>Fetching challenge state</div>
+      <div className="page landing-page">
+        <div className="landing-hero">
+          <h1 className="landing-title">Name the Top 10</h1>
+          <p className="landing-desc">
+            A cricket stats quiz. Each question is a category — guess all 10 players who top the list.
+          </p>
+          <button
+            className="btn-primary btn-lg"
+            onClick={() => setGameStarted(true)}
+            disabled={initialLoading}
+          >
+            {initialLoading ? "Loading…" : "Start Playing"}
+          </button>
         </div>
-      </GameCard>
+
+        <div className="how-it-works">
+          <p className="section-label">How it works</p>
+          <ol className="steps">
+            {HOW_IT_WORKS.map((s) => (
+              <li key={s.n} className="step">
+                <span className="step-n">{s.n}</span>
+                <span>{s.text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
     );
   }
 
-  const isInputDisabled = lives === 0 || loading || found === 10;
+  /* ── Loading ── */
+  if (initialLoading) {
+    return (
+      <div className="page">
+        <p className="status-text">Loading game…</p>
+      </div>
+    );
+  }
+
+  /* ── Error (no question loaded) ── */
+  if (error && !question) {
+    return (
+      <div className="page">
+        <p className="status-text error-text">{error}</p>
+        <button className="btn-secondary" onClick={() => void reset()}>Try again</button>
+      </div>
+    );
+  }
+
   const progress = Math.round((found / 10) * 100);
 
   return (
-    <GameCard>
-      <div className="game-shell">
-        <section aria-label="Question navigation" className="game-header-zone game-zone">
-          <div className="game-question-nav">
+    <div className="page game-page">
+
+      {/* ── Question navigation ── */}
+      <section className="question-section" aria-label="Question navigation">
+        {questions.length > 1 && (
+          <div className="question-nav">
             <button
+              className="nav-btn"
               onClick={() => void goToPreviousQuestion()}
               disabled={!canGoPrevious || loading}
-              className="game-nav-button"
               aria-label="Previous question"
             >
-              <span aria-hidden="true">←</span>
+              ←
             </button>
-
-            <div className="game-question-progress">
-              Question {questions.length === 0 ? 0 : currentQuestionIndex + 1} / {questions.length}
-            </div>
-
+            <span className="question-count">
+              {currentQuestionIndex + 1} / {questions.length}
+            </span>
             <button
+              className="nav-btn"
               onClick={() => void goToNextQuestion()}
               disabled={!canGoNext || loading}
-              className="game-nav-button"
               aria-label="Next question"
             >
-              <span aria-hidden="true">→</span>
+              →
             </button>
           </div>
-        </section>
+        )}
+        <h2 className="question-text">{question?.text ?? "…"}</h2>
+      </section>
 
-        <section aria-label="Top section" className="game-zone">
-          <h2 className="game-page-title">{question?.text}</h2>
-
-          <div className="game-progress-head">
-            <h3 className="game-section-title">Progress ({found}/10)</h3>
-            <span className="game-progress-label">{progress}%</span>
+      {/* ── Status bar ── */}
+      <section className="status-bar" aria-label="Game status" role="status" aria-live="polite">
+        <Lives count={lives} />
+        <div className="progress-wrap">
+          <span className="found-label">{found} / 10 found</span>
+          <div className="progress-track" aria-hidden="true">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
+        </div>
+      </section>
 
-          <div className="game-progress-track" aria-hidden="true">
-            <div className="game-progress-value" style={{ width: `${progress}%` }} />
-          </div>
+      {/* ── Game-over banner ── */}
+      {status === "won" && (
+        <div className="banner banner-won" role="status">
+          All 10 found. Well played!
+        </div>
+      )}
+      {status === "lost" && (
+        <div className="banner banner-lost" role="status">
+          Out of lives. See the answers below.
+        </div>
+      )}
 
-          <div className="game-stats" role="status" aria-live="polite">
-            <span>Lives {lives}</span>
-          </div>
-
-          {status === "won" && (
-            <div className="game-status-banner game-status-won" role="status" aria-live="polite">
-              Challenge completed. You found all 10 players.
-            </div>
-          )}
-
-          {status === "lost" && (
-            <div className="game-status-banner game-status-lost" role="status" aria-live="polite">
-              No lives remaining. Try reset to play again.
-            </div>
-          )}
-        </section>
-
-        <section aria-label="Guess input" className="game-zone">
-          <div className="game-input-wrap">
+      {/* ── Guess input (hidden when game over) ── */}
+      {!isGameOver && (
+        <section className="input-section" aria-label="Guess input">
+          <div className={`search-wrap${suggestions.length > 0 ? " search-open" : ""}`}>
             <input
+              ref={inputRef}
               id="guess-input"
               name="cricket-guess-input"
-              className="game-input"
+              className="search-input"
+              type="text"
               value={guess}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value.length <= 50) {
-                  setGuess(value);
-                }
-              }}
+              onChange={(e) => { if (e.target.value.length <= 50) setGuess(e.target.value); }}
               onKeyDown={(e) => {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  moveSuggestionSelection(1);
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  moveSuggestionSelection(-1);
-                  return;
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setGuess(guess.trim());
-                  return;
-                }
+                if (e.key === "ArrowDown") { e.preventDefault(); moveSuggestionSelection(1); return; }
+                if (e.key === "ArrowUp") { e.preventDefault(); moveSuggestionSelection(-1); return; }
+                if (e.key === "Escape") { e.preventDefault(); setGuess(guess.trim()); return; }
                 if (e.key === "Enter") {
                   if (selectedSuggestionIndex >= 0 && suggestions.length > 0) {
-                    e.preventDefault();
-                    submitSelectedSuggestion();
-                    return;
+                    e.preventDefault(); submitSelectedSuggestion(); return;
                   }
-                  if (!loading && found < 10) {
-                    e.preventDefault();
-                    void submitGuess();
-                  }
+                  if (!loading && found < 10) { e.preventDefault(); void submitGuess(); }
                 }
               }}
-              placeholder="Enter player name"
+              placeholder="Type a player name…"
               disabled={isInputDisabled}
               maxLength={50}
-              autoComplete="off"
+              autoComplete="cricket-player-search"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
+              data-form-type="other"
               role="combobox"
               aria-expanded={suggestions.length > 0}
-              aria-controls="player-suggestions-list"
+              aria-controls="suggestions-list"
               aria-autocomplete="list"
-              aria-activedescendant={selectedSuggestionIndex >= 0 ? `player-option-${selectedSuggestionIndex}` : undefined}
+              aria-activedescendant={selectedSuggestionIndex >= 0 ? `suggestion-${selectedSuggestionIndex}` : undefined}
             />
+
+            {suggestions.length > 0 && (
+              <ul id="suggestions-list" className="suggestions" role="listbox" aria-label="Player suggestions">
+                {suggestions.map((item, i) => (
+                  <li key={`${item.playerId}-${i}`}>
+                    <button
+                      type="button"
+                      id={`suggestion-${i}`}
+                      className={`suggestion-item${selectedSuggestionIndex === i ? " suggestion-active" : ""}${item.alreadySelected ? " suggestion-found" : ""}`}
+                      onClick={() => applySuggestion(item.value)}
+                      role="option"
+                      aria-selected={selectedSuggestionIndex === i}
+                      disabled={item.alreadySelected}
+                    >
+                      <span>{renderSuggestionLabel(item.value, guess)}</span>
+                      {item.alreadySelected && <span className="found-badge">Found</span>}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          {suggestions.length > 0 && (
-            <ul id="player-suggestions-list" className="game-suggestions" role="listbox" aria-label="Player suggestions">
-              {suggestions.map((item, index) => (
-                <li key={`${item.playerId}-${index}`}>
-                  <button
-                    type="button"
-                    id={`player-option-${index}`}
-                    className={`game-suggestion-item ${selectedSuggestionIndex === index ? "game-suggestion-item-active" : ""}`}
-                    onClick={() => applySuggestion(item.value)}
-                    role="option"
-                    aria-selected={selectedSuggestionIndex === index}
-                    disabled={item.alreadySelected}
-                  >
-                    <span>{renderSuggestionLabel(item.value, guess)}</span>
-                    {item.alreadySelected && <span className="game-suggestion-meta">Already selected</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <button onClick={() => void submitGuess()} className="game-primary-button" disabled={isInputDisabled || !guess.trim()}>
-            {loading ? "Processing..." : found === 10 ? "Challenge Completed" : "Submit Guess"}
+          <button
+            className="btn-primary"
+            onClick={() => void submitGuess()}
+            disabled={isInputDisabled || !guess.trim()}
+          >
+            {loading && !isResetting ? "Checking…" : "Guess"}
           </button>
-
-          {error && (
-            <div aria-live="polite" className="game-error">
-              {error}
-            </div>
-          )}
-
-          {feedback.text && (
-            <div aria-live="polite" className={getFeedbackClassName(feedback.tone)}>
-              {feedback.text}
-            </div>
-          )}
         </section>
+      )}
 
-        <section aria-label="Guessed players" className="game-zone">
-          <h3 className="game-section-title">Guessed Players</h3>
-
-          {guessedPlayers.length > 0 ? (
-            <ul className="game-guessed-grid">
-              {guessedPlayers.map((item) => (
-                <li key={item.playerId} className="game-guessed-item">
-                  <div className="game-rank">#{item.rank}</div>
-                  <div className="game-player-copy">
-                    <div className="game-player-name">{item.player}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="game-section-empty">No correct guesses yet.</p>
-          )}
-        </section>
-
-        {showResetConfirm ? (
-          <div className="game-reset-confirm">
-            <p>Reset this question progress?</p>
-            <div className="game-reset-actions">
-              <button className="game-secondary-button" onClick={() => setShowResetConfirm(false)} disabled={loading}>
-                Cancel
-              </button>
-              <button
-                className="game-danger-button"
-                onClick={() => {
-                  setShowResetConfirm(false);
-                  void reset();
-                }}
-                disabled={loading}
-              >
-                Confirm Reset
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button onClick={() => setShowResetConfirm(true)} disabled={loading} className="game-secondary-button game-reset-button">
-            {loading ? "Resetting..." : "Reset Game"}
+      {/* ── Feedback ── */}
+      {(feedback.text || error) && (
+        <div
+          className={`feedback feedback-${feedback.text ? feedback.tone : "error"}`}
+          role="alert"
+          aria-live="polite"
+        >
+          <span>{feedback.text || error}</span>
+          <button
+            type="button"
+            className="feedback-dismiss"
+            onClick={dismissFeedback}
+            aria-label="Dismiss"
+          >
+            ×
           </button>
-        )}
-      </div>
-    </GameCard>
+        </div>
+      )}
+
+      {/* ── Found players (active game) ── */}
+      {guessedPlayers.length > 0 && !isGameOver && (
+        <section className="found-section" aria-label="Found players">
+          <p className="section-label">Found ({guessedPlayers.length})</p>
+          <ul className="found-list">
+            {guessedPlayers.map((p) => (
+              <li key={p.playerId} className="found-item">
+                <span className="rank">#{p.rank}</span>
+                <span className="player-name">{p.player}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* ── All answers (game over) ── */}
+      {isGameOver && allAnswers.length > 0 && (
+        <section className="answers-section" aria-label="Full answer list">
+          <p className="section-label">
+            {status === "won" ? "All 10 Players" : "The Answers"}
+          </p>
+          <ul className="answers-list">
+            {allAnswers.map((a) => {
+              const found = guessedPlayers.some((g) => g.rank === a.rank);
+              return (
+                <li key={a.rank} className={`answer-item ${found ? "answer-found" : "answer-missed"}`}>
+                  <span className="rank">#{a.rank}</span>
+                  <span className="player-name">{a.player}</span>
+                  <span className="answer-badge">{found ? "Found" : "Missed"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/* ── Give up (active game only) ── */}
+      {!isGameOver && (
+        <section className="reset-section">
+          <GiveUpButton onGiveUp={() => void giveUp()} loading={loading} />
+        </section>
+      )}
+
+    </div>
   );
 }
 
