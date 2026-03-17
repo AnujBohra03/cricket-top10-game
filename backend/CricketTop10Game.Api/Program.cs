@@ -3,6 +3,7 @@ using CricketTop10Game.Api.Data;
 using CricketTop10Game.Api.Middleware;
 using CricketTop10Game.Api.Options;
 using CricketTop10Game.Api.Services;
+using CricketTop10Game.Api.Startup;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<GameOptions>(builder.Configuration.GetSection(GameOptions.SectionName));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<AdminAuthOptions>(builder.Configuration.GetSection(AdminAuthOptions.SectionName));
+builder.Services.Configure<CorsOptions>(builder.Configuration.GetSection(CorsOptions.SectionName));
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
@@ -59,19 +61,23 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
 });
 
+var corsOrigins = builder.Configuration
+    .GetSection(CorsOptions.SectionName)
+    .Get<CorsOptions>()?.AllowedOrigins ?? [];
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173",
-                "https://anujbohra03.github.io")
+        policy.WithOrigins(corsOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
 
 var app = builder.Build();
+
+StartupValidator.ValidateProductionSecrets(app);
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<GlobalExceptionMiddleware>();

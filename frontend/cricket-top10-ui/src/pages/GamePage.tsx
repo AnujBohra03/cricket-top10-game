@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useGameSession } from "../hooks/useGameSession";
+import QuestionHeader from "../components/game/QuestionHeader";
+import GuessInput from "../components/game/GuessInput";
+import AnswerGrid from "../components/game/AnswerGrid";
 import "./GamePage.css";
 
 const MAX_LIVES = 3;
@@ -10,23 +13,38 @@ const HOW_IT_WORKS = [
   { n: "3", text: "Find all 10 players to win. 3 wrong guesses and it's over." },
 ];
 
-function renderSuggestionLabel(option: string, query: string): React.ReactNode {
-  const trimmedQuery = query.trim();
-  if (!trimmedQuery) return option;
+/* ── Skeleton screen ── */
 
-  const index = option.toLowerCase().indexOf(trimmedQuery.toLowerCase());
-  if (index < 0) return option;
-
-  const before = option.slice(0, index);
-  const match = option.slice(index, index + trimmedQuery.length);
-  const after = option.slice(index + trimmedQuery.length);
-
+function GameSkeleton() {
   return (
-    <>
-      {before}
-      <mark>{match}</mark>
-      {after}
-    </>
+    <div className="page game-page" aria-busy="true" aria-label="Loading game">
+      <section className="skeleton-question">
+        <div className="skeleton-nav">
+          <div className="skeleton skeleton-nav-btn" />
+          <div className="skeleton skeleton-line" style={{ width: "48px" }} />
+          <div className="skeleton skeleton-nav-btn" />
+        </div>
+        <div className="skeleton skeleton-heading" style={{ width: "90%" }} />
+        <div className="skeleton skeleton-heading" style={{ width: "65%" }} />
+      </section>
+
+      <div className="skeleton-status-bar">
+        <div className="skeleton-hearts">
+          <div className="skeleton skeleton-circle" />
+          <div className="skeleton skeleton-circle" />
+          <div className="skeleton skeleton-circle" />
+        </div>
+        <div className="skeleton-progress">
+          <div className="skeleton skeleton-line" style={{ width: "80px" }} />
+          <div className="skeleton" style={{ height: "5px", borderRadius: "999px", width: "100%" }} />
+        </div>
+      </div>
+
+      <div className="skeleton-input-section">
+        <div className="skeleton skeleton-block" />
+        <div className="skeleton skeleton-block" />
+      </div>
+    </div>
   );
 }
 
@@ -168,11 +186,7 @@ function GamePage() {
 
   /* ── Loading ── */
   if (initialLoading) {
-    return (
-      <div className="page">
-        <p className="status-text">Loading game…</p>
-      </div>
-    );
+    return <GameSkeleton />;
   }
 
   /* ── Error (no question loaded) ── */
@@ -190,33 +204,16 @@ function GamePage() {
   return (
     <div className="page game-page">
 
-      {/* ── Question navigation ── */}
-      <section className="question-section" aria-label="Question navigation">
-        {questions.length > 1 && (
-          <div className="question-nav">
-            <button
-              className="nav-btn"
-              onClick={() => void goToPreviousQuestion()}
-              disabled={!canGoPrevious || loading}
-              aria-label="Previous question"
-            >
-              ←
-            </button>
-            <span className="question-count">
-              {currentQuestionIndex + 1} / {questions.length}
-            </span>
-            <button
-              className="nav-btn"
-              onClick={() => void goToNextQuestion()}
-              disabled={!canGoNext || loading}
-              aria-label="Next question"
-            >
-              →
-            </button>
-          </div>
-        )}
-        <h2 className="question-text">{question?.text ?? "…"}</h2>
-      </section>
+      <QuestionHeader
+        questions={questions}
+        currentQuestionIndex={currentQuestionIndex}
+        questionText={question?.text ?? "…"}
+        canGoPrevious={canGoPrevious}
+        canGoNext={canGoNext}
+        loading={loading}
+        onPrevious={() => void goToPreviousQuestion()}
+        onNext={() => void goToNextQuestion()}
+      />
 
       {/* ── Status bar ── */}
       <section className="status-bar" aria-label="Game status" role="status" aria-live="polite">
@@ -243,72 +240,21 @@ function GamePage() {
 
       {/* ── Guess input (hidden when game over) ── */}
       {!isGameOver && (
-        <section className="input-section" aria-label="Guess input">
-          <div className={`search-wrap${suggestions.length > 0 ? " search-open" : ""}`}>
-            <input
-              ref={inputRef}
-              id="guess-input"
-              name="cricket-guess-input"
-              className="search-input"
-              type="text"
-              value={guess}
-              onChange={(e) => { if (e.target.value.length <= 50) setGuess(e.target.value); }}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowDown") { e.preventDefault(); moveSuggestionSelection(1); return; }
-                if (e.key === "ArrowUp") { e.preventDefault(); moveSuggestionSelection(-1); return; }
-                if (e.key === "Escape") { e.preventDefault(); setGuess(guess.trim()); return; }
-                if (e.key === "Enter") {
-                  if (selectedSuggestionIndex >= 0 && suggestions.length > 0) {
-                    e.preventDefault(); submitSelectedSuggestion(); return;
-                  }
-                  if (!loading && found < 10) { e.preventDefault(); void submitGuess(); }
-                }
-              }}
-              placeholder="Type a player name…"
-              disabled={isInputDisabled}
-              maxLength={50}
-              autoComplete="cricket-player-search"
-              autoCorrect="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              data-form-type="other"
-              role="combobox"
-              aria-expanded={suggestions.length > 0}
-              aria-controls="suggestions-list"
-              aria-autocomplete="list"
-              aria-activedescendant={selectedSuggestionIndex >= 0 ? `suggestion-${selectedSuggestionIndex}` : undefined}
-            />
-
-            {suggestions.length > 0 && (
-              <ul id="suggestions-list" className="suggestions" role="listbox" aria-label="Player suggestions">
-                {suggestions.map((item, i) => (
-                  <li key={`${item.playerId}-${i}`}>
-                    <button
-                      type="button"
-                      id={`suggestion-${i}`}
-                      className={`suggestion-item${selectedSuggestionIndex === i ? " suggestion-active" : ""}${item.alreadySelected ? " suggestion-found" : ""}`}
-                      onClick={() => applySuggestion(item.value)}
-                      role="option"
-                      aria-selected={selectedSuggestionIndex === i}
-                      disabled={item.alreadySelected}
-                    >
-                      <span>{renderSuggestionLabel(item.value, guess)}</span>
-                      {item.alreadySelected && <span className="found-badge">Found</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          <button
-            className="btn-primary"
-            onClick={() => void submitGuess()}
-            disabled={isInputDisabled || !guess.trim()}
-          >
-            {loading && !isResetting ? "Checking…" : "Guess"}
-          </button>
-        </section>
+        <GuessInput
+          inputRef={inputRef}
+          guess={guess}
+          suggestions={suggestions}
+          selectedSuggestionIndex={selectedSuggestionIndex}
+          loading={loading}
+          isResetting={isResetting}
+          disabled={isInputDisabled}
+          found={found}
+          onGuessChange={setGuess}
+          onMoveSuggestion={moveSuggestionSelection}
+          onApplySuggestion={applySuggestion}
+          onSubmitSuggestion={submitSelectedSuggestion}
+          onSubmitGuess={() => void submitGuess()}
+        />
       )}
 
       {/* ── Feedback ── */}
@@ -330,41 +276,12 @@ function GamePage() {
         </div>
       )}
 
-      {/* ── Found players (active game) ── */}
-      {guessedPlayers.length > 0 && !isGameOver && (
-        <section className="found-section" aria-label="Found players">
-          <p className="section-label">✅ Found ({guessedPlayers.length})</p>
-          <ul className="found-list">
-            {guessedPlayers.map((p) => (
-              <li key={p.playerId} className="found-item">
-                <span className="rank">#{p.rank}</span>
-                <span className="player-name">{p.player}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* ── All answers (game over) ── */}
-      {isGameOver && allAnswers.length > 0 && (
-        <section className="answers-section" aria-label="Full answer list">
-          <p className="section-label">
-            {status === "won" ? "🏆 All 10 Players" : "📋 The Answers"}
-          </p>
-          <ul className="answers-list">
-            {allAnswers.map((a) => {
-              const found = guessedPlayers.some((g) => g.rank === a.rank);
-              return (
-                <li key={a.rank} className={`answer-item ${found ? "answer-found" : "answer-missed"}`}>
-                  <span className="rank">#{a.rank}</span>
-                  <span className="player-name">{a.player}</span>
-                  <span className="answer-badge">{found ? "Found" : "Missed"}</span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      <AnswerGrid
+        status={status}
+        isGameOver={isGameOver}
+        guessedPlayers={guessedPlayers}
+        allAnswers={allAnswers}
+      />
 
       {/* ── Give up (active game only) ── */}
       {!isGameOver && (

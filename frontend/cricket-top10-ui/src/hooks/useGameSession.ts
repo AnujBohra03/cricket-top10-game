@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAnswers, getPlayerSuggestions, getQuestion, getQuestions, getState, makeGuess, resetGame } from "../api/api";
 import type { Answer, Question } from "../types/game";
 
-type SessionStatus = "active" | "won" | "lost";
+export type SessionStatus = "active" | "won" | "lost";
 type FeedbackTone = "success" | "error" | "warning" | "neutral";
 type AttemptOutcome = "correct" | "incorrect" | "duplicate";
 type GuessStatus = "correct";
 
-interface FeedbackState {
+export interface FeedbackState {
   tone: FeedbackTone;
   text: string;
 }
@@ -18,13 +18,13 @@ interface GuessAttempt {
   rank?: number;
 }
 
-interface SuggestionOption {
+export interface SuggestionOption {
   value: string;
   playerId: string;
   alreadySelected: boolean;
 }
 
-interface GuessedPlayer {
+export interface GuessedPlayer {
   playerId: string;
   player: string;
   rank?: number;
