@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import MainLayout from "./layout/MainLayout";
 import GamePage from "./pages/GamePage";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 type ThemeMode = "light" | "dark";
 
@@ -27,7 +28,9 @@ function App() {
         setTheme((current) => (current === "dark" ? "light" : "dark"));
       }}
     >
-      <GamePage />
+      <ErrorBoundary variant="inline" fallbackMessage="The game failed to load. Please try again or refresh the page.">
+        <GamePage />
+      </ErrorBoundary>
     </MainLayout>
   );
 }

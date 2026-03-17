@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Page not found — Cricket Top 10</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #09090b;
+        color: #fafafa;
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+      }
+      .card {
+        text-align: center;
+        max-width: 380px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+      }
+      .code {
+        font-size: 4rem;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        color: #4ade80;
+        line-height: 1;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #fafafa;
+      }
+      p {
+        font-size: 0.9rem;
+        color: #a1a1aa;
+        line-height: 1.6;
+      }
+      .btn {
+        margin-top: 0.5rem;
+        display: inline-block;
+        padding: 0.6rem 1.5rem;
+        background: #4ade80;
+        color: #052e16;
+        font-weight: 700;
+        font-size: 0.9rem;
+        border-radius: 8px;
+        text-decoration: none;
+        transition: background 0.15s;
+      }
+      .btn:hover { background: #22c55e; }
+    </style>
+    <script>
+      // Redirect immediately to the app root.
+      // The timeout gives the styled page a moment to render
+      // so users on slow connections see feedback, not a blank flash.
+      setTimeout(function () {
+        window.location.replace("/cricket-top10-game/");
+      }, 1500);
+    </script>
+  </head>
+  <body>
+    <div class="card">
+      <div class="code">404</div>
+      <h1>Page not found</h1>
+      <p>Redirecting you back to the game&hellip;</p>
+      <a class="btn" href="/cricket-top10-game/">Go now</a>
+    </div>
+  </body>
+</html>

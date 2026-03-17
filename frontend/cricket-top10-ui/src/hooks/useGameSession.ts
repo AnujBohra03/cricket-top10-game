@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAnswers, getPlayerSuggestions, getQuestion, getQuestions, getState, makeGuess, resetGame } from "../api/api";
 import type { Answer, Question } from "../types/game";
 
-type SessionStatus = "active" | "won" | "lost";
+export type SessionStatus = "active" | "won" | "lost";
 type FeedbackTone = "success" | "error" | "warning" | "neutral";
 type AttemptOutcome = "correct" | "incorrect" | "duplicate";
 type GuessStatus = "correct";
 
-interface FeedbackState {
+export interface FeedbackState {
   tone: FeedbackTone;
   text: string;
 }
@@ -18,13 +18,13 @@ interface GuessAttempt {
   rank?: number;
 }
 
-interface SuggestionOption {
+export interface SuggestionOption {
   value: string;
   playerId: string;
   alreadySelected: boolean;
 }
 
-interface GuessedPlayer {
+export interface GuessedPlayer {
   playerId: string;
   player: string;
   rank?: number;
@@ -39,7 +39,6 @@ interface UseGameSessionResult {
   found: number;
   guess: string;
   feedback: FeedbackState;
-  correctAnswers: Answer[];
   allAnswers: Answer[];
   attempts: GuessAttempt[];
   guessedPlayers: GuessedPlayer[];
@@ -47,6 +46,7 @@ interface UseGameSessionResult {
   selectedSuggestionIndex: number;
   error: string;
   loading: boolean;
+  isResetting: boolean;
   initialLoading: boolean;
   status: SessionStatus;
   canGoPrevious: boolean;
@@ -58,6 +58,7 @@ interface UseGameSessionResult {
   dismissFeedback: () => void;
   submitGuess: () => Promise<void>;
   reset: () => Promise<void>;
+  giveUp: () => Promise<void>;
   goToPreviousQuestion: () => Promise<void>;
   goToNextQuestion: () => Promise<void>;
 }
@@ -108,7 +109,6 @@ export function useGameSession(): UseGameSessionResult {
   const [found, setFound] = useState(0);
   const [guess, setGuess] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState>({ tone: "neutral", text: "" });
-  const [correctAnswers, setCorrectAnswers] = useState<Answer[]>([]);
   const [allAnswers, setAllAnswers] = useState<Answer[]>([]);
   const [attempts, setAttempts] = useState<GuessAttempt[]>([]);
   const [guessedPlayers, setGuessedPlayers] = useState<GuessedPlayer[]>([]);
@@ -116,6 +116,7 @@ export function useGameSession(): UseGameSessionResult {
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [status, setStatus] = useState<SessionStatus>("active");
   const isMountedRef = useRef(true);
@@ -217,7 +218,6 @@ export function useGameSession(): UseGameSessionResult {
         setCurrentQuestionIndex(resolvedIndex >= 0 ? resolvedIndex : 0);
         setLives(s.lives);
         setFound(s.found);
-        setCorrectAnswers(s.correctGuesses);
         setGuessedPlayers(toCorrectRows(s.correctGuesses));
 
         const derivedStatus: SessionStatus = s.found >= 10 ? "won" : s.lives <= 0 ? "lost" : "active";
@@ -305,7 +305,6 @@ export function useGameSession(): UseGameSessionResult {
         setCurrentQuestionIndex(nextIndex);
         setLives(s.lives);
         setFound(s.found);
-        setCorrectAnswers(s.correctGuesses);
         setGuessedPlayers(toCorrectRows(s.correctGuesses));
         setGuess("");
         setFeedback({ tone: "neutral", text: "" });
@@ -357,7 +356,7 @@ export function useGameSession(): UseGameSessionResult {
     const existingGuess = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
     if (existingGuess) {
       const suffix = typeof existingGuess.rank === "number" ? ` (#${existingGuess.rank})` : "";
-      setFeedback({ tone: "warning", text: `Already guessed: ${existingGuess.player}${suffix}` });
+      setFeedback({ tone: "warning", text: `Already found ${existingGuess.player}${suffix} 👀` });
       pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       setGuess("");
       setSuggestions([]);
@@ -379,23 +378,22 @@ export function useGameSession(): UseGameSessionResult {
         setFeedback({
           tone: "success",
           text: resolvedRank
-            ? `${resolvedPlayer} is correct at Rank #${resolvedRank}.`
-            : `${resolvedPlayer} is a correct answer.`,
+            ? `Nice one! 🎯 ${resolvedPlayer} is Rank #${resolvedRank}`
+            : `Nice one! 🎯 ${resolvedPlayer} is correct`,
         });
         pushAttempt({ player: resolvedPlayer, outcome: "correct", rank: resolvedRank });
       } else if (result.message === "Already guessed") {
         const existing = guessedPlayers.find((item) => item.playerId === normalizedGuessId);
         const suffix = existing && typeof existing.rank === "number" ? ` (#${existing.rank})` : "";
-        setFeedback({ tone: "warning", text: `Already guessed: ${existing?.player ?? trimmedGuess}${suffix}` });
+        setFeedback({ tone: "warning", text: `Already found ${existing?.player ?? trimmedGuess}${suffix} 👀` });
         pushAttempt({ player: trimmedGuess, outcome: "duplicate" });
       } else {
-        setFeedback({ tone: "error", text: `${trimmedGuess} is not in the Top 10 for this question.` });
+        setFeedback({ tone: "error", text: `Nope! 😅 ${trimmedGuess} isn't in the Top 10` });
         pushAttempt({ player: trimmedGuess, outcome: "incorrect" });
       }
 
       setLives(response.state.lives);
       setFound(response.state.found);
-      setCorrectAnswers(response.state.correctGuesses);
       mergeCorrectRows(response.state.correctGuesses);
       setStatus(response.gameStatus);
       setGuess("");
@@ -421,6 +419,7 @@ export function useGameSession(): UseGameSessionResult {
     try {
       setError("");
       setLoading(true);
+      setIsResetting(true);
       await resetGame();
       const s = await getState();
 
@@ -428,7 +427,6 @@ export function useGameSession(): UseGameSessionResult {
       setFound(s.found);
       setGuess("");
       setFeedback({ tone: "neutral", text: "" });
-      setCorrectAnswers(s.correctGuesses);
       setGuessedPlayers(toCorrectRows(s.correctGuesses));
       setAllAnswers([]);
       setAttempts([]);
@@ -441,9 +439,33 @@ export function useGameSession(): UseGameSessionResult {
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
+        setIsResetting(false);
       }
     }
   }, []);
+
+  const giveUp = useCallback(async () => {
+    if (!question || status !== "active") return;
+    try {
+      setError("");
+      setLoading(true);
+      await refreshAllAnswers(question.id);
+      if (isMountedRef.current) {
+        setStatus("lost");
+        setGuess("");
+        setSuggestions([]);
+        setSelectedSuggestionIndex(-1);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to reveal answers.");
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [question, refreshAllAnswers, status]);
 
   const goToPreviousQuestion = useCallback(async () => {
     await loadQuestionByIndex(currentQuestionIndex - 1);
@@ -502,7 +524,6 @@ export function useGameSession(): UseGameSessionResult {
     found,
     guess,
     feedback,
-    correctAnswers,
     allAnswers,
     attempts,
     guessedPlayers,
@@ -510,6 +531,7 @@ export function useGameSession(): UseGameSessionResult {
     selectedSuggestionIndex,
     error,
     loading,
+    isResetting,
     initialLoading,
     status,
     canGoPrevious: currentQuestionIndex > 0,
@@ -521,6 +543,7 @@ export function useGameSession(): UseGameSessionResult {
     dismissFeedback,
     submitGuess,
     reset,
+    giveUp,
     goToPreviousQuestion,
     goToNextQuestion,
   };
