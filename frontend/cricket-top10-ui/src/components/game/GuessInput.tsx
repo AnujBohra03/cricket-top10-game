@@ -77,10 +77,11 @@ function GuessInput({
           placeholder="Type a player name…"
           disabled={disabled}
           maxLength={50}
-          autoComplete="cricket-player-search"
+          autoComplete="off"
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
+          inputMode="text"
           data-form-type="other"
           role="combobox"
           aria-expanded={suggestions.length > 0}

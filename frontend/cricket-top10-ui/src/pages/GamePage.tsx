@@ -64,11 +64,59 @@ function Lives({ count }: { count: number }) {
 
 function GiveUpButton({ onGiveUp, loading }: { onGiveUp: () => void; loading: boolean }) {
   const [confirm, setConfirm] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  /* Move focus into dialog when it opens */
+  useEffect(() => {
+    if (confirm) {
+      const first = dialogRef.current?.querySelector<HTMLElement>("button:not(:disabled)");
+      first?.focus();
+    }
+  }, [confirm]);
+
+  /* Trap Tab inside dialog; Escape closes it */
+  function handleDialogKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setConfirm(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (e.key !== "Tab") return;
+
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? []
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
 
   if (confirm) {
     return (
-      <div className="reset-confirm">
-        <p className="reset-question">Give up and reveal all answers?</p>
+      <div
+        ref={dialogRef}
+        className="reset-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="giveup-dialog-title"
+        onKeyDown={handleDialogKeyDown}
+      >
+        <p id="giveup-dialog-title" className="reset-question">Give up and reveal all answers?</p>
         <div className="reset-actions">
           <button
             className="btn-danger"
@@ -77,7 +125,11 @@ function GiveUpButton({ onGiveUp, loading }: { onGiveUp: () => void; loading: bo
           >
             Yes, give up
           </button>
-          <button className="btn-ghost" onClick={() => setConfirm(false)} disabled={loading}>
+          <button
+            className="btn-ghost"
+            onClick={() => { setConfirm(false); triggerRef.current?.focus(); }}
+            disabled={loading}
+          >
             Cancel
           </button>
         </div>
@@ -86,7 +138,7 @@ function GiveUpButton({ onGiveUp, loading }: { onGiveUp: () => void; loading: bo
   }
 
   return (
-    <button className="btn-reset" onClick={() => setConfirm(true)} disabled={loading}>
+    <button ref={triggerRef} className="btn-reset" onClick={() => setConfirm(true)} disabled={loading}>
       Give up
     </button>
   );
@@ -129,8 +181,10 @@ function GamePage() {
     goToNextQuestion,
   } = useGameSession();
 
-  /* Global arrow-key navigation (only when not focused on input) */
+  /* Global arrow-key navigation — desktop (fine pointer) only */
   useEffect(() => {
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea") return;
@@ -140,6 +194,23 @@ function GamePage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [canGoNext, canGoPrevious, goToNextQuestion, goToPreviousQuestion, loading]);
+
+  /* Scroll focused input into view when soft keyboard opens (mobile) */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    function onViewportResize() {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) return;
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+
+    vv.addEventListener("resize", onViewportResize);
+    return () => vv.removeEventListener("resize", onViewportResize);
+  }, []);
 
   /* Auto-dismiss success feedback */
   useEffect(() => {

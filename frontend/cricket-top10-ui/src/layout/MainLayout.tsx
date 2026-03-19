@@ -11,7 +11,7 @@ function MainLayout({
   onToggleTheme: () => void;
 }) {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
       <Header theme={theme} onToggleTheme={onToggleTheme} />
       <main style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
         {children}

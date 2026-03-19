@@ -58,6 +58,7 @@ html {
 
 body {
   min-height: 100vh;
+  min-height: 100dvh; /* shrinks with the soft keyboard on mobile */
   line-height: 1.6;
 }
 
