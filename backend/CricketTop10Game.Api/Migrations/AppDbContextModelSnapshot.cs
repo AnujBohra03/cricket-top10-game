@@ -81,10 +81,6 @@ namespace CricketTop10Game.Api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("TEXT")
-                        .HasDefaultValueSql("datetime('now')");
-
                     b.HasKey("Id");
 
                     b.ToTable("Questions");

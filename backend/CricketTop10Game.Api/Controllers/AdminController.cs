@@ -69,7 +69,6 @@ public class AdminController : ControllerBase
         {
             Id = Guid.NewGuid(),
             Text = dto.Question.Trim(),
-            CreatedDate = DateTime.UtcNow,
             Answers = dto.Answers.Select(a => new AnswerEntity
             {
                 Id = Guid.NewGuid(),
