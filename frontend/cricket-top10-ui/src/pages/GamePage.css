@@ -331,8 +331,15 @@
   border-bottom-right-radius: var(--radius);
   list-style: none;
   z-index: 20;
-  max-height: 200px;
+  max-height: 220px;
   overflow-y: auto;
+  /* Momentum scrolling on iOS */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure <li> never shrinks the button's hit area */
+.suggestions li {
+  display: block;
 }
 
 .suggestion-item {
@@ -340,7 +347,9 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 9px 14px;
+  /* 44px min-height: WCAG 2.5.8 / Apple HIG minimum touch target */
+  min-height: 44px;
+  padding: 10px 14px;
   font-size: 14px;
   text-align: left;
   background: none;
@@ -348,6 +357,19 @@
   color: var(--text);
   gap: 8px;
   transition: background 0.1s;
+}
+
+/* Coarse pointer (touchscreen) — larger targets, no hover flicker */
+@media (pointer: coarse) {
+  .suggestion-item {
+    min-height: 48px;
+    padding: 12px 16px;
+    font-size: 16px; /* prevents iOS auto-zoom on tap */
+  }
+
+  .suggestions {
+    max-height: 260px;
+  }
 }
 
 .suggestion-item:hover:not(:disabled),

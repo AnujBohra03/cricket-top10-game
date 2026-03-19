@@ -12,6 +12,11 @@ export interface FeedbackState {
   text: string;
 }
 
+export interface GameOptions {
+  /** Maximum number of recent attempts kept in state. Default: 12 */
+  maxAttempts?: number;
+}
+
 interface GuessAttempt {
   player: string;
   outcome: AttemptOutcome;
@@ -101,7 +106,8 @@ function toCorrectRows(correctGuesses: Answer[]): GuessedPlayer[] {
   return sortGuessedPlayers(rows);
 }
 
-export function useGameSession(): UseGameSessionResult {
+export function useGameSession(options: GameOptions = {}): UseGameSessionResult {
+  const { maxAttempts = 12 } = options;
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [question, setQuestion] = useState<Question | null>(null);
@@ -127,7 +133,7 @@ export function useGameSession(): UseGameSessionResult {
   const suggestionAbortRef = useRef<AbortController | null>(null);
 
   const pushAttempt = useCallback((attempt: GuessAttempt) => {
-    setAttempts((previous) => [attempt, ...previous].slice(0, 12));
+    setAttempts((previous) => [attempt, ...previous].slice(0, maxAttempts));
   }, []);
 
   const mergeCorrectRows = useCallback((nextCorrectGuesses: Answer[]) => {
