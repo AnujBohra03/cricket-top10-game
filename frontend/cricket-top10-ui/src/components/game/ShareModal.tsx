@@ -23,38 +23,28 @@ function buildEmojiGrid(guessedPlayers: GuessedPlayer[]): string {
   return Array.from({ length: 10 }, (_, i) => (guessedRanks.has(i + 1) ? "🟩" : "⬜")).join("");
 }
 
-function buildShareText(
+/** Text shown in the preview and sent via native Share (no URL — shown separately). */
+function buildPreviewText(
   status: SessionStatus,
   found: number,
   lives: number,
   questionText: string,
-  questionId: string,
   allAnswers: Answer[],
   guessedPlayers: GuessedPlayer[]
 ): string {
   const emojiGrid = allAnswers.length > 0 ? buildEmojiGrid(guessedPlayers) : "";
-  const url = buildShareUrl(questionId);
 
   let resultLine: string;
   if (status === "won") {
     resultLine =
       lives === 3
-        ? `Perfect! All 10/10 with no wrong guesses 🏆`
-        : `Found all 10/10 with ${lives}/3 lives left 🏆`;
+        ? `Perfect! 10/10 with no wrong guesses 🏆`
+        : `Found 10/10 with ${lives}/3 lives left 🏆`;
   } else {
-    resultLine = `Got ${found}/10 cricket legends — can you beat me? 🏏`;
+    resultLine = `Got ${found}/10 correct — can you beat me? 🏏`;
   }
 
-  const lines = [
-    `Cricket Top 10 🏏`,
-    `"${questionText}"`,
-    ``,
-    emojiGrid,
-    resultLine,
-    ``,
-    url,
-  ];
-  return lines.join("\n");
+  return [`Cricket Top 10 🏏`, `"${questionText}"`, ``, emojiGrid, resultLine].join("\n");
 }
 
 export default function ShareModal({
@@ -100,16 +90,17 @@ export default function ShareModal({
     [onClose]
   );
 
-  const shareText = buildShareText(status, found, lives, questionText, questionId, allAnswers, guessedPlayers);
+  const shareUrl = buildShareUrl(questionId);
+  const previewText = buildPreviewText(status, found, lives, questionText, allAnswers, guessedPlayers);
+  const fullShareText = `${previewText}\n\n${shareUrl}`;
   const canNativeShare = typeof navigator.share === "function";
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(shareText);
+      await navigator.clipboard.writeText(shareUrl);
     } catch {
-      // Fallback for browsers without clipboard API
       const ta = document.createElement("textarea");
-      ta.value = shareText;
+      ta.value = shareUrl;
       ta.style.cssText = "position:fixed;opacity:0;pointer-events:none";
       document.body.appendChild(ta);
       ta.select();
@@ -123,7 +114,7 @@ export default function ShareModal({
 
   async function handleShare() {
     try {
-      await navigator.share({ text: shareText });
+      await navigator.share({ text: fullShareText });
     } catch {
       // User cancelled or share failed — silently ignore
     }
@@ -159,7 +150,12 @@ export default function ShareModal({
         </div>
 
         <div className="share-preview">
-          <pre className="share-text-preview">{shareText}</pre>
+          <pre className="share-text-preview">{previewText}</pre>
+        </div>
+
+        <div className="share-url-row">
+          <span className="share-url-label">Link</span>
+          <span className="share-url-value">{shareUrl}</span>
         </div>
 
         <div className="share-actions">
@@ -172,7 +168,7 @@ export default function ShareModal({
             className={canNativeShare ? "btn-secondary" : "btn-primary"}
             onClick={() => void handleCopy()}
           >
-            {copied ? "Copied!" : "Copy to clipboard"}
+            {copied ? "✅ Link copied!" : "Copy link"}
           </button>
         </div>
       </div>
