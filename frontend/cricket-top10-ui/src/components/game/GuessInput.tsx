@@ -22,7 +22,7 @@ function renderSuggestionLabel(option: string, query: string): React.ReactNode {
 }
 
 interface Props {
-  inputRef: RefObject<HTMLInputElement>;
+  inputRef: RefObject<HTMLInputElement | null>;
   guess: string;
   suggestions: SuggestionOption[];
   selectedSuggestionIndex: number;
