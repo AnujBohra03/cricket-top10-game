@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useGameSession } from "../hooks/useGameSession";
+import type { SessionStatus } from "../hooks/useGameSession";
 import QuestionHeader from "../components/game/QuestionHeader";
 import GuessInput from "../components/game/GuessInput";
 import AnswerGrid from "../components/game/AnswerGrid";
+import ShareModal from "../components/game/ShareModal";
 import "./GamePage.css";
 
 const MAX_LIVES = 3;
@@ -148,7 +150,9 @@ function GiveUpButton({ onGiveUp, loading }: { onGiveUp: () => void; loading: bo
 
 function GamePage() {
   const [gameStarted, setGameStarted] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const prevStatusRef = useRef<SessionStatus>("active");
 
   const {
     questions,
@@ -218,6 +222,19 @@ function GamePage() {
     const t = window.setTimeout(dismissFeedback, 2500);
     return () => window.clearTimeout(t);
   }, [dismissFeedback, feedback.text, feedback.tone]);
+
+  /* Auto-show share modal when game ends */
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (prev === "active" && (status === "won" || status === "lost")) {
+      const t = window.setTimeout(() => setShowShareModal(true), 900);
+      return () => window.clearTimeout(t);
+    }
+    if (status === "active") {
+      setShowShareModal(false);
+    }
+  }, [status]);
 
   const isGameOver = status === "won" || status === "lost";
   const isInputDisabled = lives === 0 || loading || found === 10 || isGameOver;
@@ -359,6 +376,20 @@ function GamePage() {
         <section className="reset-section">
           <GiveUpButton onGiveUp={() => void giveUp()} loading={loading} />
         </section>
+      )}
+
+      {/* ── Share modal (game over) ── */}
+      {isGameOver && showShareModal && question && (
+        <ShareModal
+          status={status}
+          found={found}
+          lives={lives}
+          questionText={question.text}
+          questionId={question.id}
+          allAnswers={allAnswers}
+          guessedPlayers={guessedPlayers}
+          onClose={() => setShowShareModal(false)}
+        />
       )}
 
     </div>
