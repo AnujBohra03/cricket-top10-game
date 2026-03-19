@@ -18,7 +18,7 @@ function buildShareUrl(questionId: string): string {
   return `${base.replace(/\/$/, "")}/?q=${encodeURIComponent(questionId)}`;
 }
 
-function buildEmojiGrid(allAnswers: Answer[], guessedPlayers: GuessedPlayer[]): string {
+function buildEmojiGrid(guessedPlayers: GuessedPlayer[]): string {
   const guessedRanks = new Set(guessedPlayers.map((p) => p.rank));
   return Array.from({ length: 10 }, (_, i) => (guessedRanks.has(i + 1) ? "🟩" : "⬜")).join("");
 }
@@ -32,7 +32,7 @@ function buildShareText(
   allAnswers: Answer[],
   guessedPlayers: GuessedPlayer[]
 ): string {
-  const emojiGrid = allAnswers.length > 0 ? buildEmojiGrid(allAnswers, guessedPlayers) : "";
+  const emojiGrid = allAnswers.length > 0 ? buildEmojiGrid(guessedPlayers) : "";
   const url = buildShareUrl(questionId);
 
   let resultLine: string;
