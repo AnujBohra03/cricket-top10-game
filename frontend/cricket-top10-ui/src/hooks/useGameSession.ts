@@ -122,6 +122,9 @@ export function useGameSession(): UseGameSessionResult {
   const isMountedRef = useRef(true);
   const suppressNextSuggestionFetchRef = useRef(false);
   const suggestionsCacheRef = useRef<Map<string, string[]>>(new Map());
+  const currentGuessRef = useRef(guess);
+  currentGuessRef.current = guess;
+  const suggestionAbortRef = useRef<AbortController | null>(null);
 
   const pushAttempt = useCallback((attempt: GuessAttempt) => {
     setAttempts((previous) => [attempt, ...previous].slice(0, 12));
@@ -268,18 +271,23 @@ export function useGameSession(): UseGameSessionResult {
       return;
     }
 
+    const queryAtDispatch = guess;
     const timer = setTimeout(async () => {
+      suggestionAbortRef.current?.abort();
+      const controller = new AbortController();
+      suggestionAbortRef.current = controller;
       try {
-        const result = await getPlayerSuggestions(guess.trim());
-        const sorted = formatSuggestionList(guess, result);
+        const result = await getPlayerSuggestions(queryAtDispatch.trim(), controller.signal);
+        const sorted = formatSuggestionList(queryAtDispatch, result);
         suggestionsCacheRef.current.set(normalizedQuery, sorted);
-        if (isMountedRef.current) {
+        if (isMountedRef.current && currentGuessRef.current === queryAtDispatch) {
           const decorated = decorateSuggestions(sorted);
           setSuggestions(decorated);
           setSelectedSuggestionIndex(decorated.length > 0 ? 0 : -1);
         }
-      } catch {
-        if (isMountedRef.current) {
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        if (isMountedRef.current && currentGuessRef.current === queryAtDispatch) {
           setSuggestions([]);
           setSelectedSuggestionIndex(-1);
         }
