@@ -103,11 +103,11 @@ export async function getAnswers(questionId: string): Promise<Answer[]> {
   return parseAnswers(data);
 }
 
-export async function getPlayerSuggestions(query: string): Promise<string[]> {
+export async function getPlayerSuggestions(query: string, signal?: AbortSignal): Promise<string[]> {
   if (query.trim().length < 2) {
     return [];
   }
-  const data = await request(`/players/suggest?q=${encodeURIComponent(query)}`);
+  const data = await request(`/players/suggest?q=${encodeURIComponent(query)}`, { signal });
   if (Array.isArray(data) && data.every((item) => typeof item === "string")) {
     return data;
   }
