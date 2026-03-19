@@ -215,7 +215,8 @@ export function useGameSession(options: GameOptions = {}): UseGameSessionResult 
         setError("");
         setInitialLoading(true);
         const questionList = await getQuestions();
-        const q = await getQuestion();
+        const urlQuestionId = new URLSearchParams(window.location.search).get("q") ?? undefined;
+        const q = await getQuestion(urlQuestionId);
         const s = await getState();
         if (cancelled || !isMountedRef.current) {
           return;
