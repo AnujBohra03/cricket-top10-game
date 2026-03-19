@@ -84,9 +84,11 @@ public class GameService
 
         try
         {
+            var pattern = $"%{normalizedQuery}%";
+            var prefixPattern = $"{normalizedQuery}%";
             var fromPlayers = await _db.Players.AsNoTracking()
-                .Where(p => p.NormalizedName.Contains(normalizedQuery))
-                .OrderBy(p => p.NormalizedName.StartsWith(normalizedQuery) ? 0 : 1)
+                .Where(p => EF.Functions.Like(p.NormalizedName, pattern))
+                .OrderBy(p => EF.Functions.Like(p.NormalizedName, prefixPattern) ? 0 : 1)
                 .ThenBy(p => p.Name)
                 .Take(8)
                 .Select(p => p.Name)
@@ -385,9 +387,11 @@ public class GameService
 
     private async Task<List<string>> SuggestFromAnswersAsync(string normalizedQuery, CancellationToken cancellationToken)
     {
+        var pattern = $"%{normalizedQuery}%";
+        var prefixPattern = $"{normalizedQuery}%";
         return await _db.Answers.AsNoTracking()
-            .Where(a => a.NormalizedPlayer.Contains(normalizedQuery))
-            .OrderBy(a => a.NormalizedPlayer.StartsWith(normalizedQuery) ? 0 : 1)
+            .Where(a => EF.Functions.Like(a.NormalizedPlayer, pattern))
+            .OrderBy(a => EF.Functions.Like(a.NormalizedPlayer, prefixPattern) ? 0 : 1)
             .ThenBy(a => a.Player)
             .Select(a => a.Player)
             .Distinct()
