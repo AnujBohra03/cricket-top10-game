@@ -65,11 +65,12 @@ public class GameService
     public async Task<List<QuestionEntity>> GetQuestionsAsync(CancellationToken cancellationToken = default)
     {
         return await _db.Questions.AsNoTracking()
-            .OrderBy(q => q.Text)
+            .OrderByDescending(q => q.CreatedDate)
             .Select(q => new QuestionEntity
             {
                 Id = q.Id,
-                Text = q.Text
+                Text = q.Text,
+                CreatedDate = q.CreatedDate
             })
             .ToListAsync(cancellationToken);
     }
